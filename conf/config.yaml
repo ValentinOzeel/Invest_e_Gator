@@ -1,0 +1,4 @@
+# If yfinance_API_REQUESTS_RATE_NUMBER = 2 and yfinance_API_REQUESTS_RATE_SECONDS = 5:
+#   The limit will be set at 2 api requests per 5 secodns
+yfinance_API_REQUESTS_RATE_NUMBER: 2
+yfinance_API_REQUESTS_RATE_SECONDS: 5
