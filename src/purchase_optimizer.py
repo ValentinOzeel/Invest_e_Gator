@@ -11,7 +11,7 @@ import copy
 class PurchaseOptimizer():
     def __init__(self, budget:int, ticker_priority_order:List, allocations:Dict, prices:dict, mode:str='rounds'):
         
-        # progressive mode enable to buy 1 share per turn for each stock in priority order (round-robin approach) until the budget is exhausted.
+ 
         # rounds mode enables to attempt to buy a certain percentage of the allocated budget for each stock in each round (in ascending priority order)
         #             If the round_percentage is too small compared to the price of a share, it might prevent the purchase of any shares in that round. 
         #             To handle this, we can accumulate the budget allocated per stock over multiple rounds until it is sufficient to purchase at least one share.
@@ -114,15 +114,15 @@ class PurchaseOptimizer():
         # Sort stocks by priority
         self.data = self.data.sort_values(by='Priority', ascending=False)
     
-    def _print_data_df(self, flag:bool=False):
+    def _print_data_df(self, flag:bool):
         if flag: 
             print(self.data, '\n\n')
 
-    def build_df(self, print_df=True):
+    def build_df(self, flag_print_df=False):
         self._create_initial_df()
         self._target_budget_per_stock()
         #self._sort_by_priority()
-        self._print_data_df(print_df)
+        self._print_data_df(flag_print_df)
 
     ##########                                      ##########
     ##########   PURCHASES OPTIMIZATION STRATEGIES  ##########
@@ -131,6 +131,10 @@ class PurchaseOptimizer():
     def _df_results(self, df, remaining_budget):
         df['FinalAllocation'] = round((df['Shares'] * df['Price']) / self.budget, 2)
         return df, remaining_budget
+    
+    def _compute_max_allowable_cost(self, row, approved_alloc_surplus):
+        # Calculate the maximum_allowable_cost considering the 'approved_alloc_diff'
+        return (row['Allocation'] + approved_alloc_surplus) * self.budget
        
     def strict_optimizer(self, approved_alloc_surplus:float=0.05):
         '''
@@ -142,7 +146,7 @@ class PurchaseOptimizer():
         # Iterate over ticker symbol
         for idx, row in self.data.iterrows():
             # Calculate the maximum_allowable_cost considering the 'approved_alloc_diff'
-            max_allowable_cost = (row['Allocation'] + approved_alloc_surplus) * self.budget
+            max_allowable_cost = self._compute_max_allowable_cost(row, approved_alloc_surplus)
             # Get maximum amount of shares to buy up to the max_allowable_cost and the associated cost
             max_shares = max_allowable_cost // row['Price']
             cost = max_shares * row['Price']
@@ -159,20 +163,64 @@ class PurchaseOptimizer():
         return self._df_results(results, remaining_budget)
             
 
+    def progressive_optimizer(self, approved_alloc_surplus:float=0.05):
+        
+        '''
+        progressive mode enables to buy 1 share per turn for each stock in priority order (round-robin approach) considereng the max allocation until the budget is exhausted.
+        '''
+        
+        remaining_budget = copy.deepcopy(self.budget)
+        results = copy.deepcopy(self.data)
+        
+        # Compute max_allowable_cost considering approved surplus for each ticker
+        max_allowable_costs = {row['Ticker'] : self._compute_max_allowable_cost(row, approved_alloc_surplus) for _, row in self.data.iterrows()}
+        # Compute max shares according to max_allowable_costs
+        max_shares = {row['Ticker'] : max_allowable_costs[row['Ticker']] // row['Price'] for _, row in self.data.iterrows()}
+        # List of tickers that have reached max allocation
+        reached_max_allocation = []
+        
+        print(max_allowable_costs)
+        print(max_shares)
+        
+        # Progressive allocation using round-robin approach
+        while remaining_budget >= self.data['Price'].min():
+            for idx, row in self.data.iterrows():
+                # Next ticker if haven't enough left to buy a share
+                if row['Price'] > remaining_budget:
+                    continue
+                # Next ticker if max allocation have been reached
+                if results.at[idx, 'Shares'] >= max_shares[row['Ticker']]:
+                    reached_max_allocation.append(row['Ticker'])
+                    continue
+                
+                # Implement a share and deduce price from remaining budget
+                results.at[idx, 'Shares'] += 1
+                remaining_budget -= row['Price']
+                
+            # Break the loop if all tickers have reached max allocation even if there is some remaining budget left
+            if all(ticker in reached_max_allocation for ticker in self.ticker_priority_order):
+                break
+
+        return self._df_results(results, remaining_budget)
+            
+            
+if __name__ == "__main__":   
+    # Example usage
+    budget = 10000
+    ticker_list = ['AAPL', 'MSFT', 'GOOGL']
+    ticker_allocations = {'AAPL': 0.5, 'MSFT': 0.1, 'GOOGL': 0.1}
+    ticker_prices = {'AAPL': 150, 'MSFT': 250, 'GOOGL': 1100}
+    modes = ['strict', 'progressive', 'rounds']
 
 
+    optim = PurchaseOptimizer(budget, ticker_list, ticker_allocations, ticker_prices, mode=modes[0])
+    strict_results, strict_remaining_budget = optim.strict_optimizer()
+    print('STRICT MODE:\n\n', strict_results, '\n\n', f'Initial budget: {budget}\n Remaining budget: {strict_remaining_budget}', '\n\n')
+
+    optim = PurchaseOptimizer(budget, ticker_list, ticker_allocations, ticker_prices, mode=modes[1])
+    progressive_results, progressive_remaining_budget = optim.progressive_optimizer()
+    print('PROGRESSIVE MODE:\n\n', progressive_results, '\n\n', f'Initial budget: {budget}\n Remaining budget: {progressive_remaining_budget}', '\n\n')
 
 
-# Example usage
-budget = 10000
-ticker_list = ['AAPL', 'MSFT', 'GOOGL']
-ticker_allocations = {'AAPL': 0.5, 'MSFT': 0.1, 'GOOGL': 0.1}
-ticker_prices = {'AAPL': 150, 'MSFT': 250, 'GOOGL': 1100}
-mode = 'strict'
-
-
-optim = PurchaseOptimizer(budget, ticker_list, ticker_allocations, ticker_prices, mode=mode)
-results, remaining_budget = optim.strict_optimizer()
-print(results, '\n\n', f'Initial budget: {budget}\n Remaining budget: {remaining_budget}')
-#optimized_shares = optimize_stock_purchase(ticker_prices, budget, allocations, priorities)
-#print(optimized_shares)
+    #optimized_shares = optimize_stock_purchase(ticker_prices, budget, allocations, priorities)
+    #print(optimized_shares)
