@@ -5,9 +5,6 @@ import copy
 # If yfinance usage to get ticker price
 #from secondary_modules.yfinance_cache import session
 
-
-
-
 class PurchaseOptimizer():
     def __init__(self, budget:int, ticker_priority_order:List, allocations:Dict, prices:dict, mode:str='rounds'):
         self.available_modes = ['strict', 'progressive', 'rounds']
@@ -267,7 +264,7 @@ class PurchaseOptimizer():
 
 
 
-        
+    IF PRICES NOT GIVEN, TRY TO ACCESS ALL PRICE VIA CURRENTPRICE OF YFINANCE :)
         
         
         
