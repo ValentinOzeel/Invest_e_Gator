@@ -101,3 +101,4 @@ if __name__ == "__main__":
     #print(msft_obj.forward_pe, '\n')
     #print(msft_obj.data_history(period='5d'), '\n')
     #print(msft_obj.financials(income_stmt=True, balance_sheet=True, cash_flow=True, quarterly=False, pretty=False), '\n')
+    print(msft_obj._ticker.news)
