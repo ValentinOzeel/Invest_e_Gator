@@ -3,7 +3,7 @@ from datetime import datetime
 import re
 from pydantic import BaseModel, field_validator, ValidationInfo, ValidationError
 
-from constants import yfinance_history_interval_period_choices
+from constants import available_currencies, yfinance_history_interval_period_choices
 from checks import verify_datetime_format
 
 
@@ -138,10 +138,11 @@ def validate_financials(**kwargs):
 class TransactionPydantic(BaseModel):
     date_hour: datetime
     transaction_type: Literal['buy', 'sale']
-    currency: Literal['usd', 'eur', 'jpy', 'gbp', 'cnh', 'aud', 'cad', 'chf']
     ticker: str
     n_shares: float
     share_price: float
+    share_currency: str
+    expense_currency: str
     fee: float
 
     @field_validator('date_hour')
@@ -175,13 +176,6 @@ class TransactionPydantic(BaseModel):
             raise ValueError(f"Input {info.field_name} -- {value} -- should be one of the following {str} value: ['buy', 'sale'].")   
         return value
     
-    @field_validator('currency')
-    @classmethod
-    def validate_currency(cls, value, info: ValidationInfo):
-        if not value in ['usd', 'eur', 'jpy', 'gbp', 'cnh', 'aud', 'cad', 'chf']:
-            raise ValueError(f"Input {info.field_name} -- {value} -- should be one of the following {str} value: ['usd', 'eur', 'jpy', 'gbp', 'cnh', 'aud', 'cad', 'chf'].")   
-        return value
-    
     @field_validator('ticker')
     @classmethod
     def validate_ticker(cls, value, info: ValidationInfo):
@@ -198,6 +192,12 @@ class TransactionPydantic(BaseModel):
             raise ValueError(f"Input {info.field_name} -- {value} -- is not an {int}/{float} instance.")  
         return value
 
+    @field_validator('share_currency', 'expense_currency')
+    @classmethod
+    def validate_share_currency(cls, value, info: ValidationInfo):        
+        if not value in available_currencies:
+            raise ValueError(f"Input {info.field_name} -- {value} -- should be one of the following {str} value: {available_currencies}.")   
+        return value
 
 def validate_transaction(**kwargs):  
     # Validate data_history parameters input through pydantic model

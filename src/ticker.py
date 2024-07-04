@@ -1,4 +1,3 @@
-import inspect
 import yfinance as yf
 
 

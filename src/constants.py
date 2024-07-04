@@ -1,3 +1,7 @@
+available_currencies = ['usd', 'eur', 'jpy', 'gbp', 'aud', 'cad', 'chf', 'cny', 'hkd', 'nzd', 'sgd', 
+                        'krw', 'inr', 'rub', 'brl', 'mxn', 'zar', 'try', 'pln', 'dkk', 'sek', 'nok', 
+                        'czk', 'ils', 'myr', 'thb', 'idr', 'huf', 'ron', 'bgn', 'hrk', 'ltl', 'php']
+
 # Define a list of attribute names and their corresponding keys in the info dictionary
 yfinance_info_attributes = {
     ## business presentation
