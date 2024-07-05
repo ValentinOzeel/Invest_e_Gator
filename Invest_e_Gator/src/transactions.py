@@ -1,7 +1,7 @@
 from typing import Literal, Union
 from datetime import datetime
 from forex_python.converter import CurrencyRates
-from secondary_modules.pydantic_valids import validate_transaction
+from Invest_e_Gator.src.secondary_modules.pydantic_valids import validate_transaction
 
 class Transaction():    
     def __init__(self, 
@@ -10,8 +10,8 @@ class Transaction():
                  ticker: str,
                  n_shares: float,
                  share_price: float,
-                 share_currency: Literal['usd', 'eur', 'jpy', 'gbp', 'cnh', 'aud', 'cad', 'chf'],
-                 expense_currency: Literal['usd', 'eur', 'jpy', 'gbp', 'cnh', 'aud', 'cad', 'chf'],
+                 share_currency: str,
+                 expense_currency: str,
                  fee: float
                  ):
         
@@ -25,8 +25,8 @@ class Transaction():
         self.n_shares = n_shares 
         self.share_price = share_price 
         self.share_currency = share_currency.lower()
-        self.expense_currency = expense_currency
         self.fee = fee 
+        self.expense_currency = expense_currency
         
     @property
     def transaction_direction(self) -> Literal[1, -1]:

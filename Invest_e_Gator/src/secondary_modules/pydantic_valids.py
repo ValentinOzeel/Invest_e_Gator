@@ -1,11 +1,10 @@
-from typing import Any, Literal
+from typing import Union, Any, Literal, Dict, List
 from datetime import datetime
 import re
 from pydantic import BaseModel, field_validator, ValidationInfo, ValidationError
 
-from constants import available_currencies, yfinance_history_interval_period_choices
-from checks import verify_datetime_format
-
+from Invest_e_Gator.src.constants import available_currencies, yfinance_history_interval_period_choices
+#from Invest_e_Gator.src.transactions import Transaction
 
 
 
@@ -31,6 +30,24 @@ def _verify_datetime_format(dt_obj:datetime, expected_format:str = '%Y-%m-%d %H:
         return dt_obj == parsed_dt
     except ValueError:
         return False
+    
+    
+def _check_tags_dict(tags_dict, info):    
+    if not isinstance(tags_dict, Dict):
+        raise ValueError(f"Input {info.field_name} -- {tags_dict} -- is not an instance of {Dict}.")
+    
+    if not all([isinstance(key, str) for key in tags_dict.keys()]):
+        raise ValueError(f"Input {info.field_name} -- {tags_dict} -- all keys should be of type {str}.")
+    
+    if not all([isinstance(value, List) for value in tags_dict.values()]):
+        raise ValueError(f"Input {info.field_name} -- {tags_dict} -- all values should be of type {List}.")
+    
+    if not all([isinstance(tag, str) for value in tags_dict.values() for tag in value]):
+        raise ValueError(f"Input {info.field_name} -- {tags_dict} -- all elements in List (Dict values) should be of type {str}.")
+    
+    
+    
+    
     
     
     
@@ -79,20 +96,9 @@ class DataHistoryPydantic(BaseModel):
             value = _verify_date_str_format(info.field_name, value, re_pattern, str_format, datetime_format, return_as_datetime=False)
         
         if isinstance(value, datetime):
-            if not verify_datetime_format(value, datetime_format):
+            if not _verify_datetime_format(value, datetime_format):
                 raise ValueError(f"Input {info.field_name} -- {value} -- should follow the {datetime_format}.")
             
-        return value
-    
-    @field_validator('include_divs_splits', 'repair', 'keepna')
-    @classmethod
-    def validate_divs_repair_keepna(cls, value, info: ValidationInfo):
-        # Return value if is None
-        if value is None:
-            return value
-        # Check if value is bool
-        if not isinstance(value, bool):
-            raise ValueError(f"Input {info.field_name} -- {value} -- is not an instance of {bool}.")
         return value
   
   
@@ -115,13 +121,6 @@ class FinancialsPydantic(BaseModel):
     cash_flow: bool
     quarterly: bool
     pretty: bool
-
-    @field_validator('income_stmt', 'balance_sheet', 'cash_flow', 'quarterly', 'pretty')
-    @classmethod
-    def validate_interval(cls, value, info: ValidationInfo):
-        if not isinstance(value, bool):
-            raise ValueError(f"Input {info.field_name} -- {value} -- is not a {bool} instance.")
-        return value
     
 def validate_financials(**kwargs):  
     # Validate data_history parameters input through pydantic model
@@ -136,22 +135,18 @@ def validate_financials(**kwargs):
 ############# Transaction: add #############
        
 class TransactionPydantic(BaseModel):
-    date_hour: datetime
+    date_hour: Union[str, datetime]
     transaction_type: Literal['buy', 'sale']
     ticker: str
-    n_shares: float
-    share_price: float
+    n_shares: Union[float, int]
+    share_price: Union[float, int]
     share_currency: str
     expense_currency: str
-    fee: float
+    fee: Union[float, None]
 
     @field_validator('date_hour')
     @classmethod
-    def validate_date_hour(cls, value, info: ValidationInfo):
-        # Check if value is either str or datetime
-        if not any([isinstance(value, str), isinstance(value, datetime)]):
-            raise ValueError(f"Input {info.field_name} -- {value} -- is not an instance of {str} nor {datetime}.")
-        
+    def validate_date_hour(cls, value, info: ValidationInfo):        
         # If value is str, check if valid str
         if isinstance(value, str):
             # Define the regular expression pattern YYYY-MM-DD HH:MM:SS
@@ -163,34 +158,11 @@ class TransactionPydantic(BaseModel):
             value = _verify_date_str_format(info.field_name, value, re_pattern, str_format, datetime_format, return_as_datetime=True)
             
         if isinstance(value, datetime):
-            if not verify_datetime_format(value, '%Y-%m-%d %H:%M:%S'):
+            if not _verify_datetime_format(value, '%Y-%m-%d %H:%M:%S'):
                 raise ValueError(f"Input {info.field_name} -- {value} -- should follow the '%Y-%m-%d %H:%M:%S'.")
             
         return value
-    
-
-    @field_validator('transaction_type')
-    @classmethod
-    def validate_transaction_type(cls, value, info: ValidationInfo):
-        if not value in ['buy', 'sale']:
-            raise ValueError(f"Input {info.field_name} -- {value} -- should be one of the following {str} value: ['buy', 'sale'].")   
-        return value
-    
-    @field_validator('ticker')
-    @classmethod
-    def validate_ticker(cls, value, info: ValidationInfo):
-        if not isinstance(value, str):
-            raise ValueError(f"Input {info.field_name} -- {value} -- is not an instance of {str}.")  
-        
-    @field_validator('n_shares', 'share_price', 'fee')
-    @classmethod
-    def validate_ticker(cls, value, info: ValidationInfo):
-        if info.field_name == 'fee' and value is None:
-            return value 
-        
-        if not isinstance(value, float) and not isinstance(value, int):
-            raise ValueError(f"Input {info.field_name} -- {value} -- is not an {int}/{float} instance.")  
-        return value
+ 
 
     @field_validator('share_currency', 'expense_currency')
     @classmethod
@@ -205,3 +177,49 @@ def validate_transaction(**kwargs):
         TransactionPydantic(**kwargs)
     except ValidationError as e:
         raise ValueError(f'Invalid Transaction class parameters:\n{e}')
+    
+    
+    
+    
+
+############# Portfolio: load_transactions_from_csv #############
+
+class PortfolioLoadCsvPydantic(BaseModel):
+    file_path: str
+    tags_dict: Union[Dict[str, List], None]
+        
+    @field_validator('tags_dict')
+    @classmethod
+    def validate_tags_dict(cls, value, info: ValidationInfo):
+        if value is None:
+            return value 
+        _check_tags_dict(value, info)
+        return value
+    
+def validate_load_csv(**kwargs):  
+    # Validate data_history parameters input through pydantic model
+    try:
+        PortfolioLoadCsvPydantic(**kwargs)
+    except ValidationError as e:
+        raise ValueError(f'Invalid load_transactions_from_csv parameters:\n{e}')
+    
+    
+############# Portfolio: add_transaction #############
+
+class PortfolioTagsDictPydantic(BaseModel):
+    #transaction: Transaction
+    tags_dict: Dict[str, List]
+        
+    @field_validator('tags_dict')
+    @classmethod
+    def validate_tags_dict(cls, value, info: ValidationInfo):
+        _check_tags_dict(value, info)
+        return value
+    
+def validate_tags_dict(**kwargs):  
+    # Validate data_history parameters input through pydantic model
+    try:
+        PortfolioTagsDictPydantic(**kwargs)
+    except ValidationError as e:
+        raise ValueError(f'Invalid add_transaction parameters:\n{e}')
+    

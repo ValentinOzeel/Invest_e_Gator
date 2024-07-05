@@ -1,0 +1,20 @@
+[tool.poetry]
+name = "Invest_e_Gator"
+version = "0.1.0"
+authors = ["Your Name <youremail@example.com>"]
+description = 'Portfolio tracked'
+repository = "https://github.com/ValentinOzeel/Invest_e_Gator"
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.10"
+pandas = "^2.2.2"
+yfinance = {extras = ["nospam", "repair"], version = "^0.2.40"}
+PyYAML = "^6.0.1"
+forex-python = "^1.8"
+pydantic = "^2.8"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

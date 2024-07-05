@@ -2,25 +2,24 @@ from typing import List, Dict
 import pandas as pd
 import copy
 
-# If yfinance usage to get ticker price
-#from secondary_modules.yfinance_cache import session
+from ticker import Ticker
 
 class PurchaseOptimizer():
-    def __init__(self, budget:int, ticker_priority_order:List, allocations:Dict, prices:dict, mode:str='rounds'):
+    def __init__(self, budget:int, ticker_priority_order:List, allocations:Dict, prices:dict=None, mode:str='rounds'):
         self.available_modes = ['strict', 'progressive', 'rounds']
         
         ## yfinance doesn't provide real time price so let the user provide stocks prices
         #self.ticker_yf_objects = {}
         
-        # Validate inputs
-        self.validate_input(budget, ticker_priority_order, allocations, prices, mode)
-        
         # Set attribute if inputs are valid
         self.global_budget = budget
         self.ticker_priority_order = ticker_priority_order
         self.allocations = allocations
-        self.prices = prices
+        self.prices = prices if prices else self.get_current_prices()
         self.mode = mode.lower() 
+        
+        # Validate inputs
+        self.validate_input(self.global_budget, self.ticker_priority_order, self.allocations, self.prices, self.mode)
         
         
         # Build the data df
@@ -41,7 +40,9 @@ class PurchaseOptimizer():
             raise ValueError("The sum of ticker budget allocation proportions ('allocation' attribute, args[2]) must be comprised between 0 and 1.")
     
     def _validate_prices(self, prices):
-        if any(price <= 0 for price in prices.values()):
+        if not prices:
+            pass
+        elif any(price <= 0 for price in prices.values()):
             raise ValueError("All stock prices (dict's values) in the 'prices' attribute (args[3]) must be superior to 0.")
             
     def _validate_tickers_priority_and_allocations(self, ticker_list_priority, allocations, prices):
@@ -77,6 +78,9 @@ class PurchaseOptimizer():
         self._validate_mode(mode)
         #self._validate_tickers_exist_and_gather_yf_objects(ticker_list_priority)
         
+    def get_current_prices(self):
+        return {ticker:Ticker(ticker).current_price for ticker in self.ticker_priority_order}
+    
 
     ##########             ##########
     ##########   BUILD DF  ##########
@@ -223,14 +227,17 @@ class PurchaseOptimizer():
                 
         # Perform rounds of purchases
         while remaining_budget >= self.data['Price'].min():
+            done = []
             for idx, row in self.data.iterrows():
                 ticker = row['Ticker']
                 # Next ticker if in reacher_max_allocation or if haven't enough left to buy a share
                 if (ticker in reached_max_allocation) or (row['Price'] > remaining_budget):
+                    done.append(idx)
                     continue
                 # Next ticker if max allocation have been reached
                 if results.at[idx, 'Shares'] >= max_shares[ticker]:
                     if ticker not in reached_max_allocation : reached_max_allocation.append(ticker)
+                    done.append(idx)
                     continue
                 
                 # Compute target budget with surplus
@@ -242,6 +249,7 @@ class PurchaseOptimizer():
 
                 # Next ticker if we cannot buy a single share yet with the accumulated budget
                 if accumulated_budget[ticker] <= row['Price']:
+                    done.append(idx)
                     continue
                 else:
                     # Determine the number of shares to buy with the accumulated budget
@@ -258,35 +266,37 @@ class PurchaseOptimizer():
                         
             # Break the loop if all tickers have reached max allocation even if there is some remaining budget left
             if all(ticker in reached_max_allocation for ticker in self.ticker_priority_order):
-                break     
+                break
+            
+            # if all rows are done
+            if pd.Index(done).equals(self.data.index):
+                break  
         return self._df_results(results, remaining_budget)
 
 
 
-
-    IF PRICES NOT GIVEN, TRY TO ACCESS ALL PRICE VIA CURRENTPRICE OF YFINANCE :)
-        
-        
-        
         
         
 if __name__ == "__main__":   
     # Example usage
-    budget = 10000
-    ticker_list = ['NVDA', 'AAPL', 'MSFT', 'GOOGL', 'TSLA', 'PENNY_STOCK']
-    ticker_allocations = {'AAPL': 0.16, 'MSFT': 0.15, 'GOOGL': 0.12, 'NVDA': 0.25, 'TSLA': 0.22, 'PENNY_STOCK': 0.1}
-    ticker_prices = {'AAPL': 150, 'MSFT': 250, 'GOOGL': 1000, 'NVDA': 133, 'TSLA': 188, 'PENNY_STOCK': 0.4}
+    budget = 50000
+    ticker_list = ['NVDA', 'AAPL', 'MSFT', 'GOOGL', 'TSLA', 'DNA']
+    ticker_allocations = {'AAPL': 0.16, 'MSFT': 0.15, 'GOOGL': 0.12, 'NVDA': 0.25, 'TSLA': 0.22, 'DNA': 0.1}
+    ticker_prices = {'AAPL': 150, 'MSFT': 250, 'GOOGL': 1000, 'NVDA': 133, 'TSLA': 188, 'DNA': 0.4}
     modes = ['strict', 'progressive', 'rounds']
     print('\n')
 
-    optim = PurchaseOptimizer(budget, ticker_list, ticker_allocations, ticker_prices, mode=modes[0])
+    optim = PurchaseOptimizer(budget, ticker_list, ticker_allocations, mode=modes[0])
+    #optim = PurchaseOptimizer(budget, ticker_list, ticker_allocations, ticker_prices, mode=modes[0])
     strict_results, strict_remaining_budget = optim.strict_optimizer(approved_alloc_surplus=0.01)
     print('STRICT MODE:\n\n', strict_results, '\n\n', f'Initial budget: {budget}\n Remaining budget: {strict_remaining_budget}', '\n----------\n')
 
-    optim = PurchaseOptimizer(budget, ticker_list, ticker_allocations, ticker_prices, mode=modes[1])
+    optim = PurchaseOptimizer(budget, ticker_list, ticker_allocations, mode=modes[1])
+    #optim = PurchaseOptimizer(budget, ticker_list, ticker_allocations, ticker_prices, mode=modes[1])
     progressive_results, progressive_remaining_budget = optim.progressive_optimizer(approved_alloc_surplus=0.01)
     print('PROGRESSIVE MODE:\n\n', progressive_results, '\n\n', f'Initial budget: {budget}\n Remaining budget: {progressive_remaining_budget}', '\n----------\n')
 
-    optim = PurchaseOptimizer(budget, ticker_list, ticker_allocations, ticker_prices, mode=modes[2])
+    optim = PurchaseOptimizer(budget, ticker_list, ticker_allocations, mode=modes[2])
+    #optim = PurchaseOptimizer(budget, ticker_list, ticker_allocations, ticker_prices, mode=modes[2])
     round_results, round_remaining_budget = optim.rounds_optimizer(0.1, approved_alloc_surplus=0.01)
     print('ROUNDS MODE:\n\n', round_results, '\n\n', f'Initial budget: {budget}\n Remaining budget: {round_remaining_budget}', '\n----------\n')

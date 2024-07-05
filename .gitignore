@@ -1,2 +1,6 @@
+transactions.csv
+create_test_csv.py
+
 __pycache__
 yfinance.cache
+poetry.lock

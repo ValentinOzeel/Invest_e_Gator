@@ -1,9 +1,9 @@
 import yfinance as yf
+from datetime import datetime
 
-
-from secondary_modules.yfinance_cache import session
-from secondary_modules.pydantic_valids import validate_data_history, validate_financials
-from constants import yfinance_info_attributes
+from Invest_e_Gator.src.secondary_modules.yfinance_cache import session
+from Invest_e_Gator.src.secondary_modules.pydantic_valids import validate_data_history, validate_financials
+from Invest_e_Gator.src.constants import yfinance_info_attributes
 
 class Ticker():
     def __init__(self, ticker_name):
@@ -67,6 +67,9 @@ class Ticker():
         # Return df or tuple(df, metadata)
         return history_df if not history_metadata else (history_df, self._ticker.history_metadata) 
 
+    def get_closing_price(self, date:datetime):
+        data = self.data_history(period=None, start=date, end=date)
+        return data.loc[str(date), 'Close']
 
     def financials(self, income_stmt:bool=True, balance_sheet:bool=False, cash_flow:bool=False, quarterly:bool=False, pretty:bool=False):
         """
