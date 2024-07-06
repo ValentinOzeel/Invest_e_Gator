@@ -1,6 +1,6 @@
 from typing import Dict, List, Union
 import pandas as pd
-from forex_python.converter import CurrencyRates
+from forex_python.converter import CurrencyRates, RatesNotAvailableError
 from datetime import datetime
 
 from Invest_e_Gator.src.secondary_modules.pydantic_valids import validate_load_csv, validate_tags_dict
@@ -19,15 +19,22 @@ class Portfolio:
                                                      'fee',
                                                      'transact_cost_share_currency', 'transact_cost_expense_currency', 'transact_cost_base_currency'])
 
-    def _currency_conversion(self, amount:float, date_obj:datetime, currency:str, target_currency:str):
-        return amount if currency == self.base_currency else amount * self.currency_conversion.get_rate(currency, target_currency, date_obj)
+    def _currency_conversion(self, amount, currency, target_currency, date_obj):
+        if currency == self.base_currency:
+            return amount
+        try:
+            rate = self.currency_conversion.get_rate(currency, target_currency, date_obj)
+            return amount * rate
+        except (ConnectionError, RatesNotAvailableError) as e:
+            print(f"Error fetching currency conversion rate: {e}")
+            return None
         
+
     def _get_ticker_tags(self, ticker:str, tags_dict:Dict[str, List]):
         if not tags_dict:
             return None
         return tags_dict[ticker] if tags_dict.get(ticker) else None
             
-        
     def add_transaction(self, transaction: Transaction, tags_dict:Dict[str, List]=None):
         if not isinstance(transaction, Transaction): raise ValueError('In add_transaction, transaction parameters should be a Transaction object.')
         validate_tags_dict(tags_dict=tags_dict)
@@ -37,6 +44,7 @@ class Portfolio:
         ticker_long_name = ticker_obj.name
         ticker_tags = self._get_ticker_tags(transaction.ticker, tags_dict)
         
+        transact_cost_base_currency = None
         # Check if exepense currency == base currency, otherwise make conversion
         if transaction.expense_currency != self.base_currency:
             cr = CurrencyRates()
@@ -61,8 +69,10 @@ class Portfolio:
             'transact_cost_base_currency': transact_cost_base_currency if transact_cost_base_currency else transaction.transaction_cost_expense_currency
         }, ignore_index=True)
         
+        self.transactions_df.sort_values(by='date_hour', ascending = True, inplace = True)
+        
     def load_transactions_from_csv(self, file_path: str, tags_dict:Dict[str, List]=None):
-        validate_load_csv(file_path=file_path, tags_dict=tags_dict)
+        validate_load_csv(file_path=file_path)
         # Read csv
         transactions_df = pd.read_csv(file_path, parse_dates=['date_hour'])
         # Transaform rows as Transaction obj
@@ -87,34 +97,36 @@ class Portfolio:
         end_date = self.transactions_df['date_hour'].max().date()
         all_dates = pd.date_range(start_date, end_date)
         
-        # Initialize a list to store daily metrics
-        daily_metrics = []
+        print('ALL DATES:  ', all_dates)
+        # Initialize a dict to store daily metrics
+        daily_metrics = {}
 
         # Iterate over each date
         for current_date in all_dates:
+            print('CURRENT DATE    ', current_date)
             current_transactions = self.transactions_df[self.transactions_df['date_hour'] <= current_date]
 
             # Initialize dictionaries to store daily metrics
             security_values = {}                # Daily ticker position value
             security_invested = {}              # Daily ticker position invested
             security_cost_average = {}          # Daily ticker cost average per share
-            security_percentages_invested = {}  # Daily ticker invested relative to total amount invested
-            security_percentages_pf_value = {}  # Daily ticker position value relative to total pf value
+            security_ratio_invested = {}  # Daily ticker invested relative to total amount invested
+            security_ratio_pf_value = {}  # Daily ticker position value relative to total pf value
 
             total_value = 0
             total_invested = 0
             
             # Calculate total value and individual stock metrics
             for ticker in current_transactions['ticker'].unique():
+                # Get transactions corresponding to ticker
                 ticker_transactions = current_transactions[current_transactions['ticker'] == ticker]
-
                 # Total share held at day
                 quantity = ticker_transactions['quantity'].sum()
                 # Total cost investment at day
                 total_cost_base_currency = ticker_transactions['transact_cost_base_currency'].sum()
                 # Cost average per share
                 cost_average = total_cost_base_currency / quantity
-                
+                # Create Ticker object
                 ticker_obj = Ticker(ticker)
                 # Get day value in base currency
                 day_value_base_currency = self._currency_conversion(
@@ -123,6 +135,9 @@ class Portfolio:
                     currency=ticker_obj.currency, 
                     target_currency=self.base_currency
                 )
+                
+                print('CURRENT DATE VALUE:   ', day_value_base_currency)
+                
                 # Calculate day position value
                 position_value_base_currency = quantity * day_value_base_currency
                 # Update dictionnaries
@@ -133,35 +148,23 @@ class Portfolio:
                 total_value += position_value_base_currency
                 total_invested += total_cost_base_currency
 
-
-
             # Calculate percentage portfolio value and percentage invested
             for ticker in security_values:
-                security_percentages_pf_value[ticker] = security_values[ticker] / total_value if total_value != 0 else 0
-                security_percentages_invested[ticker] = security_invested[ticker] / total_invested if total_invested != 0 else 0
+                security_ratio_pf_value[ticker] = security_values[ticker] / total_value if total_value != 0 else 0
+                security_ratio_invested[ticker] = security_invested[ticker] / total_invested if total_invested != 0 else 0
 
-
+            daily_metrics[current_date] = {
+                'security_values': security_values,
+                'security_invested': security_invested,
+                'security_cost_average': security_cost_average,
+                'security_ratio_invested': security_ratio_invested,
+                'security_ratio_pf_value': security_ratio_pf_value,
+                'total_value': total_value,
+                'total_invested': total_invested
+                }
             
-            
-        create portfolio_df
-        
-        Holdingds, holding_pct, holding_value, holdings_invested
-        
-        iterate over df_transaction rows inverted:
-            at the time of the date, gathe all stock held, their % of all holdings, their value at the time and the amount invested
+        return daily_metrics
 
-
-    def get_portfolio_value(self, date: Union[str, datetime] = datetime.now()) -> float:
-        total_value = 0.0
-        for ticker, quantity in self.holdings.items():
-            ticker_obj = Ticker(ticker)
-            price = ticker_obj.data_history(interval='1d', start=date, end=date)['Close'].iloc[0]
-            total_value += quantity * price
-        return total_value
-
-    def get_total_cost(self) -> float:
-        total_cost = sum(self.currency_conversion(transaction.transaction_cost, transaction.currency, self.base_currency, transaction.date_hour) for transaction in self.transactions)
-        return total_cost
 
     def get_portfolio_return(self, date: Union[str, datetime] = datetime.now()) -> float:
         initial_value = self.get_total_cost()
@@ -183,3 +186,5 @@ if __name__ == "__main__":
     portfolio = Portfolio()
     portfolio.load_transactions_from_csv(r'C:\Users\V.ozeel\Documents\Perso\Coding\Python\Projects\Finances\Invest_e_Gator\Invest_e_Gator\src\transactions.csv')
     print(portfolio.transactions_df)
+    metrics = portfolio.process_transactions()
+    print(metrics)

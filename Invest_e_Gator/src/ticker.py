@@ -1,5 +1,7 @@
 import yfinance as yf
+import pandas as pd
 from datetime import datetime
+from datetime import timedelta
 
 from Invest_e_Gator.src.secondary_modules.yfinance_cache import session
 from Invest_e_Gator.src.secondary_modules.pydantic_valids import validate_data_history, validate_financials
@@ -67,9 +69,28 @@ class Ticker():
         # Return df or tuple(df, metadata)
         return history_df if not history_metadata else (history_df, self._ticker.history_metadata) 
 
+
+    def find_closest_inferior_date(self, df, target_date):
+        # Ensure the index is in datetime format
+        df.index = pd.to_datetime(df.index)
+        # Ensure the target_date is in datetime format
+        target_date = pd.to_datetime(target_date)
+        # Filter out dates greater than the target date
+        inferior_dates = df[df.index <= target_date]
+        if inferior_dates.empty:
+            raise ValueError("No dates found that are less than or equal to the target date.")
+        # Find the maximum date from the remaining dates
+        return inferior_dates.index.max()
+
+    
     def get_closing_price(self, date:datetime):
-        data = self.data_history(period=None, start=date, end=date)
-        return data.loc[str(date), 'Close']
+        date = date.tz_localize('America/New_York')
+        data = self.data_history(period='3mo')
+        closest_inferior_date = self.find_closest_inferior_date(data, date)
+        print(f'WantedDate: ', date)
+        print('DATA :', data)
+        print('FETCHED: ', closest_inferior_date, ' ', data.at[closest_inferior_date, 'Close'])
+        return data.at[closest_inferior_date, 'Close']
 
     def financials(self, income_stmt:bool=True, balance_sheet:bool=False, cash_flow:bool=False, quarterly:bool=False, pretty:bool=False):
         """

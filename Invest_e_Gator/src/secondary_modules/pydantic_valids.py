@@ -55,7 +55,7 @@ def _check_tags_dict(tags_dict, info):
           
 class DataHistoryPydantic(BaseModel):
     interval: str
-    period: str 
+    period: Union[str, None] 
     start: Any
     end: Any
     include_divs_splits: bool
@@ -85,14 +85,15 @@ class DataHistoryPydantic(BaseModel):
         # Check if value is either str or datetime
         if not any([isinstance(value, str), isinstance(value, datetime)]):
             raise ValueError(f"Input {info.field_name} -- {value} -- is not an instance of {str} nor {datetime}.")
+        
+        # Date format
+        str_format = 'YYYY-MM-DD'
+        datetime_format = '%Y-%m-%d' 
+            
         # If value is str, check if valid str
         if isinstance(value, str):
             # Define the regular expression pattern for YYYY-MM-DD
             re_pattern = r'^\d{4}-\d{2}-\d{2}$'
-            # Date format
-            str_format = 'YYYY-MM-DD'
-            datetime_format = '%Y-%m-%d'
-
             value = _verify_date_str_format(info.field_name, value, re_pattern, str_format, datetime_format, return_as_datetime=False)
         
         if isinstance(value, datetime):
@@ -186,14 +187,12 @@ def validate_transaction(**kwargs):
 
 class PortfolioLoadCsvPydantic(BaseModel):
     file_path: str
-    tags_dict: Union[Dict[str, List], None]
         
-    @field_validator('tags_dict')
+    @field_validator('file_path')
     @classmethod
-    def validate_tags_dict(cls, value, info: ValidationInfo):
-        if value is None:
-            return value 
-        _check_tags_dict(value, info)
+    def validate_file_path(cls, value, info: ValidationInfo):
+        if '.csv' not in value:
+            raise ValueError(f"Input {info.field_name} -- {value} -- should point towards a '.csv' file.")   
         return value
     
 def validate_load_csv(**kwargs):  
@@ -208,11 +207,13 @@ def validate_load_csv(**kwargs):
 
 class PortfolioTagsDictPydantic(BaseModel):
     #transaction: Transaction
-    tags_dict: Dict[str, List]
+    tags_dict: Union[Dict[str, List], None]
         
     @field_validator('tags_dict')
     @classmethod
     def validate_tags_dict(cls, value, info: ValidationInfo):
+        if value is None:
+            return value 
         _check_tags_dict(value, info)
         return value
     
