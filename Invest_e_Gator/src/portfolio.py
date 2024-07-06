@@ -1,6 +1,7 @@
 from typing import Dict, List, Union
 import pandas as pd
 from forex_python.converter import CurrencyRates, RatesNotAvailableError
+from currency_converter import CurrencyConverter
 from datetime import datetime
 
 from Invest_e_Gator.src.secondary_modules.pydantic_valids import validate_load_csv, validate_tags_dict
@@ -10,7 +11,8 @@ from Invest_e_Gator.src.ticker import Ticker
 class Portfolio:
     def __init__(self, base_currency: str = 'usd'):
         self.base_currency = base_currency.lower()
-        self.currency_conversion = CurrencyRates()
+        self.currency_conversion_1 = CurrencyRates()
+        self.currency_conversion_2 = CurrencyConverter(fallback_on_missing_rate=True)
         
         self.transactions_df = pd.DataFrame(columns=['date_hour', 
                                                      'transaction_type',  
@@ -22,13 +24,17 @@ class Portfolio:
     def _currency_conversion(self, amount, currency, target_currency, date_obj):
         if currency == self.base_currency:
             return amount
-        try:
-            rate = self.currency_conversion.get_rate(currency, target_currency, date_obj)
-            return amount * rate
-        except (ConnectionError, RatesNotAvailableError) as e:
-            print(f"Error fetching currency conversion rate: {e}")
-            return None
         
+        try:
+            rate = self.currency_conversion_1.get_rate(currency, target_currency, date_obj)
+            return amount * rate
+        except Exception as e:
+            print(f"Coudn't fetch currency conversion rate with forex_python, let's try with currency_converter...")  
+            try:
+                # currency_converter need currency in uppercase
+                return self.currency_conversion_2.convert(amount, currency.upper(), target_currency.upper(), date_obj)
+            except Exception as ex:
+                print(f"Error fetching currency conversion rate with currency_converter neither.\nforex_python error: {e}\ncurrency_converter error: {ex}\n")
 
     def _get_ticker_tags(self, ticker:str, tags_dict:Dict[str, List]):
         if not tags_dict:
@@ -44,13 +50,13 @@ class Portfolio:
         ticker_long_name = ticker_obj.name
         ticker_tags = self._get_ticker_tags(transaction.ticker, tags_dict)
         
-        transact_cost_base_currency = None
-        # Check if exepense currency == base currency, otherwise make conversion
-        if transaction.expense_currency != self.base_currency:
-            cr = CurrencyRates()
-            transact_cost_base_currency = transaction.transaction_cost_expense_currency * cr.get_rate(transaction.expense_currency, 
-                                                                                                      self.base_currency, 
-                                                                                                      transaction.date_hour)
+        # Check if exepense currency == base currency, otherwise make conversion            
+        transact_cost_base_currency = self._currency_conversion(
+            amount=transaction.transaction_cost_expense_currency, 
+            date_obj=transaction.date_hour, 
+            currency=transaction.expense_currency, 
+            target_currency=self.base_currency
+        )
         
         # Add transaction in dataframe (convert currency + add name + add n_shares_price)
         self.transactions_df = self.transactions_df._append({
@@ -93,8 +99,8 @@ class Portfolio:
         
     def process_transactions(self):
         # Create a date range from the first to the last transaction date
-        start_date = self.transactions_df['date_hour'].min().date()
-        end_date = self.transactions_df['date_hour'].max().date()
+        start_date = self.transactions_df['date_hour'].min().date() + pd.Timedelta(days=1)
+        end_date = self.transactions_df['date_hour'].max().date() + pd.Timedelta(days=1)
         all_dates = pd.date_range(start_date, end_date)
         
         print('ALL DATES:  ', all_dates)
@@ -132,7 +138,7 @@ class Portfolio:
                 day_value_base_currency = self._currency_conversion(
                     amount=ticker_obj.get_closing_price(current_date), 
                     date_obj=current_date, 
-                    currency=ticker_obj.currency, 
+                    currency=ticker_obj.currency.lower(), 
                     target_currency=self.base_currency
                 )
                 
@@ -166,10 +172,6 @@ class Portfolio:
         return daily_metrics
 
 
-    def get_portfolio_return(self, date: Union[str, datetime] = datetime.now()) -> float:
-        initial_value = self.get_total_cost()
-        current_value = self.get_portfolio_value(date)
-        return (current_value - initial_value) / initial_value * 100 if initial_value else 0
 
     def calculate_metrics(self, benchmark_ticker: str = '^GSPC'):
         # This method will calculate all the requested metrics and plot them
@@ -187,4 +189,5 @@ if __name__ == "__main__":
     portfolio.load_transactions_from_csv(r'C:\Users\V.ozeel\Documents\Perso\Coding\Python\Projects\Finances\Invest_e_Gator\Invest_e_Gator\src\transactions.csv')
     print(portfolio.transactions_df)
     metrics = portfolio.process_transactions()
-    print(metrics)
+    for date in metrics:
+        print(metrics[date], '\n')
