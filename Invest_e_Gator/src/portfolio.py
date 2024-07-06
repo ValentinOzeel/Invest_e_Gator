@@ -1,40 +1,17 @@
 from typing import Dict, List, Union
 import pandas as pd
-from forex_python.converter import CurrencyRates, RatesNotAvailableError
-from currency_converter import CurrencyConverter
-from datetime import datetime
 
 from Invest_e_Gator.src.secondary_modules.pydantic_valids import validate_load_csv, validate_tags_dict
+from Invest_e_Gator.src.secondary_modules.currency_conversion import currency_conversion
 from Invest_e_Gator.src.transactions import Transaction
 from Invest_e_Gator.src.ticker import Ticker
+from Invest_e_Gator.src.portfolio_metrics import PortfolioMetrics
 
 class Portfolio:
-    def __init__(self, base_currency: str = 'usd'):
+    def __init__(self, cash_position:Union[int, float], base_currency: str = 'usd'):
+        self.cash_position = cash_position
         self.base_currency = base_currency.lower()
-        self.currency_conversion_1 = CurrencyRates()
-        self.currency_conversion_2 = CurrencyConverter(fallback_on_missing_rate=True)
-        
-        self.transactions_df = pd.DataFrame(columns=['date_hour', 
-                                                     'transaction_type',  
-                                                     'ticker', 'name', 
-                                                     'share_currency', 'share_price', 'quantity'
-                                                     'fee',
-                                                     'transact_cost_share_currency', 'transact_cost_expense_currency', 'transact_cost_base_currency'])
-
-    def _currency_conversion(self, amount, currency, target_currency, date_obj):
-        if currency == self.base_currency:
-            return amount
-        
-        try:
-            rate = self.currency_conversion_1.get_rate(currency, target_currency, date_obj)
-            return amount * rate
-        except Exception as e:
-            print(f"Coudn't fetch currency conversion rate with forex_python, let's try with currency_converter...")  
-            try:
-                # currency_converter need currency in uppercase
-                return self.currency_conversion_2.convert(amount, currency.upper(), target_currency.upper(), date_obj)
-            except Exception as ex:
-                print(f"Error fetching currency conversion rate with currency_converter neither.\nforex_python error: {e}\ncurrency_converter error: {ex}\n")
+        self.transactions_df = pd.DataFrame()
 
     def _get_ticker_tags(self, ticker:str, tags_dict:Dict[str, List]):
         if not tags_dict:
@@ -51,7 +28,7 @@ class Portfolio:
         ticker_tags = self._get_ticker_tags(transaction.ticker, tags_dict)
         
         # Check if exepense currency == base currency, otherwise make conversion            
-        transact_cost_base_currency = self._currency_conversion(
+        transact_cost_base_currency = currency_conversion(
             amount=transaction.transaction_cost_expense_currency, 
             date_obj=transaction.date_hour, 
             currency=transaction.expense_currency, 
@@ -97,79 +74,11 @@ class Portfolio:
             )
 
         
-    def process_transactions(self):
-        # Create a date range from the first to the last transaction date
-        start_date = self.transactions_df['date_hour'].min().date() + pd.Timedelta(days=1)
-        end_date = self.transactions_df['date_hour'].max().date() + pd.Timedelta(days=1)
-        all_dates = pd.date_range(start_date, end_date)
-        
-        print('ALL DATES:  ', all_dates)
-        # Initialize a dict to store daily metrics
-        daily_metrics = {}
+    def compute_portfolio_metrics(self):
+        pf_metrics = PortfolioMetrics(self.transactions_df, self.base_currency)
+        results = pf_metrics.compute_metrics()
 
-        # Iterate over each date
-        for current_date in all_dates:
-            print('CURRENT DATE    ', current_date)
-            current_transactions = self.transactions_df[self.transactions_df['date_hour'] <= current_date]
-
-            # Initialize dictionaries to store daily metrics
-            security_values = {}                # Daily ticker position value
-            security_invested = {}              # Daily ticker position invested
-            security_cost_average = {}          # Daily ticker cost average per share
-            security_ratio_invested = {}  # Daily ticker invested relative to total amount invested
-            security_ratio_pf_value = {}  # Daily ticker position value relative to total pf value
-
-            total_value = 0
-            total_invested = 0
-            
-            # Calculate total value and individual stock metrics
-            for ticker in current_transactions['ticker'].unique():
-                # Get transactions corresponding to ticker
-                ticker_transactions = current_transactions[current_transactions['ticker'] == ticker]
-                # Total share held at day
-                quantity = ticker_transactions['quantity'].sum()
-                # Total cost investment at day
-                total_cost_base_currency = ticker_transactions['transact_cost_base_currency'].sum()
-                # Cost average per share
-                cost_average = total_cost_base_currency / quantity
-                # Create Ticker object
-                ticker_obj = Ticker(ticker)
-                # Get day value in base currency
-                day_value_base_currency = self._currency_conversion(
-                    amount=ticker_obj.get_closing_price(current_date), 
-                    date_obj=current_date, 
-                    currency=ticker_obj.currency.lower(), 
-                    target_currency=self.base_currency
-                )
-                
-                print('CURRENT DATE VALUE:   ', day_value_base_currency)
-                
-                # Calculate day position value
-                position_value_base_currency = quantity * day_value_base_currency
-                # Update dictionnaries
-                security_values[ticker] = position_value_base_currency
-                security_invested[ticker] = total_cost_base_currency
-                security_cost_average[ticker] = cost_average
-                # Update total_value and total_invested
-                total_value += position_value_base_currency
-                total_invested += total_cost_base_currency
-
-            # Calculate percentage portfolio value and percentage invested
-            for ticker in security_values:
-                security_ratio_pf_value[ticker] = security_values[ticker] / total_value if total_value != 0 else 0
-                security_ratio_invested[ticker] = security_invested[ticker] / total_invested if total_invested != 0 else 0
-
-            daily_metrics[current_date] = {
-                'security_values': security_values,
-                'security_invested': security_invested,
-                'security_cost_average': security_cost_average,
-                'security_ratio_invested': security_ratio_invested,
-                'security_ratio_pf_value': security_ratio_pf_value,
-                'total_value': total_value,
-                'total_invested': total_invested
-                }
-            
-        return daily_metrics
+        return results
 
 
 
@@ -188,6 +97,7 @@ if __name__ == "__main__":
     portfolio = Portfolio()
     portfolio.load_transactions_from_csv(r'C:\Users\V.ozeel\Documents\Perso\Coding\Python\Projects\Finances\Invest_e_Gator\Invest_e_Gator\src\transactions.csv')
     print(portfolio.transactions_df)
-    metrics = portfolio.process_transactions()
-    for date in metrics:
-        print(metrics[date], '\n')
+    metrics = portfolio.compute_portfolio_metrics()
+    #for date in metrics:
+    #    print(metrics[date], '\n')
+    print(metrics)
