@@ -142,7 +142,7 @@ class TransactionPydantic(BaseModel):
     n_shares: Union[float, int]
     share_price: Union[float, int]
     share_currency: str
-    expense_currency: str
+    transact_currency: str
     fee: Union[float, None]
 
     @field_validator('date_hour')
@@ -165,7 +165,7 @@ class TransactionPydantic(BaseModel):
         return value
  
 
-    @field_validator('share_currency', 'expense_currency')
+    @field_validator('share_currency', 'transact_currency')
     @classmethod
     def validate_share_currency(cls, value, info: ValidationInfo):        
         if not value in available_currencies:

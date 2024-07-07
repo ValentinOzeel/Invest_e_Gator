@@ -8,8 +8,10 @@ from Invest_e_Gator.src.ticker import Ticker
 from Invest_e_Gator.src.portfolio_metrics import PortfolioMetrics
 
 class Portfolio:
-    def __init__(self, cash_position:Union[int, float], base_currency: str = 'usd'):
-        self.cash_position = cash_position
+    def __init__(self, 
+                 #cash_position:Union[int, float], 
+                 base_currency: str = 'usd'):
+        #self.cash_position = cash_position
         self.base_currency = base_currency.lower()
         self.transactions_df = pd.DataFrame()
 
@@ -28,10 +30,10 @@ class Portfolio:
         ticker_tags = self._get_ticker_tags(transaction.ticker, tags_dict)
         
         # Check if exepense currency == base currency, otherwise make conversion            
-        transact_cost_base_currency = currency_conversion(
-            amount=transaction.transaction_cost_expense_currency, 
+        transact_amount_base_currency = currency_conversion(
+            amount=transaction.transaction_amount_transact_currency, 
             date_obj=transaction.date_hour, 
-            currency=transaction.expense_currency, 
+            currency=transaction.transact_currency, 
             target_currency=self.base_currency
         )
         
@@ -42,14 +44,17 @@ class Portfolio:
             'ticker': transaction.ticker,
             'name': ticker_long_name,
             'tags': ticker_tags,
-            'share_currency': transaction.share_currency,
-            'share_price': transaction.share_price,
-            'quantity': transaction.quantity,
-            #'expense_currency': transaction.expense_currency,
-            'fee': transaction.fee,
-            #'transact_cost_share_currency': transaction.transaction_cost_share_currency,
-            #'transact_cost_expense_currency': transaction.transaction_cost_expense_currency,
-            'transact_cost_base_currency': transact_cost_base_currency if transact_cost_base_currency else transaction.transaction_cost_expense_currency
+            'n_shares': transaction.n_shares, # n shares sold or bought (positive number)
+            'quantity': transaction.quantity, # actual number (negative or positive)
+            'share_price_base_currency': currency_conversion(
+                                            amount=transaction.share_price_transact_currency, 
+                                            date_obj=transaction.date_hour, 
+                                            currency=transaction.transact_currency, 
+                                            target_currency=self.base_currency
+                                        ),
+            #'transact_currency': transaction.transact_currency,
+            'fee_transact_currency': transaction.fee,
+            'transact_amount_base_currency': transact_amount_base_currency if transact_amount_base_currency else transaction.transaction_amount_transact_currency
         }, ignore_index=True)
         
         self.transactions_df.sort_values(by='date_hour', ascending = True, inplace = True)
@@ -67,7 +72,7 @@ class Portfolio:
                 n_shares=row['n_shares'],
                 share_price=row['share_price'],
                 share_currency=row['share_currency'],
-                expense_currency=row['expense_currency'],
+                transact_currency=row['transact_currency'],
                 fee=row['fee']
                 ), 
                 tags_dict
