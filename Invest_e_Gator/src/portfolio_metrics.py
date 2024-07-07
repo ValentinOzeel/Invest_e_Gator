@@ -71,7 +71,7 @@ class PortfolioMetrics():
         print(f'({value} + {realized} - {invested}) / {invested} = {(value + realized - invested) / invested}')
         return (value + realized - invested) / invested
             
-    def _compute_invested_and_value(self):
+    def _compute_invested_realized_and_value(self):
         # Initialize a dict to store daily metrics
         daily_metrics = {}
 
