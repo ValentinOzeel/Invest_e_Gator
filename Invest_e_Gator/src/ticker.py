@@ -87,9 +87,6 @@ class Ticker():
         date = date.tz_localize('America/New_York')
         data = self.data_history(period='3mo')
         closest_inferior_date = self.find_closest_inferior_date(data, date)
-        print(f'WantedDate: ', date)
-        print('DATA :', data)
-        print('FETCHED: ', closest_inferior_date, ' ', data.at[closest_inferior_date, 'Close'])
         return data.at[closest_inferior_date, 'Close']
 
     def financials(self, income_stmt:bool=True, balance_sheet:bool=False, cash_flow:bool=False, quarterly:bool=False, pretty:bool=False):
