@@ -1,6 +1,10 @@
 transactions.csv
 create_test_csv.py
+all_transactions.csv
+Transactions_25-08-2023.csv
+
 
 __pycache__
 yfinance.cache
 poetry.lock
+.env
