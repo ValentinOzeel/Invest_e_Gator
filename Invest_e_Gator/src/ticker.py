@@ -69,12 +69,40 @@ class Ticker():
         # Return df or tuple(df, metadata)
         return history_df if not history_metadata else (history_df, self._ticker.history_metadata) 
 
+    def categorize_date_for_fetching_data_history(self, date):
+        date = pd.to_datetime(date)
+        # Current datetime
+        now = datetime.now()
+        # Calculate date ranges
+        five_days_ago = now - timedelta(days=5)
+        one_month_ago = now - timedelta(days=30)
+        three_months_ago = now - timedelta(days=90)
+        six_months_ago = now - timedelta(days=180)
+        one_year_ago = now - timedelta(days=365)
+        two_years_ago = now - timedelta(days=730)
+
+        if date > five_days_ago:
+            return '5d'
+        elif date > one_month_ago:
+            return '1mo'
+        elif date > three_months_ago:
+            return '3mo'
+        elif date > six_months_ago:
+            return '6mo'
+        elif date > one_year_ago:
+            return '1y'
+        elif date > two_years_ago:
+            return '2y'
+        else:
+            return 'max'
 
     def find_closest_inferior_date(self, df, target_date):
-        # Ensure the index is in datetime format
-        df.index = pd.to_datetime(df.index)
         # Ensure the target_date is in datetime format
         target_date = pd.to_datetime(target_date)
+        target_date = target_date.tz_localize('America/New_York')
+        # Ensure the index is in datetime format
+        df.index = pd.to_datetime(df.index)
+        #print(df, 'VS', target_date)
         # Filter out dates greater than the target date
         inferior_dates = df[df.index <= target_date]
         if inferior_dates.empty:
@@ -84,8 +112,11 @@ class Ticker():
 
     
     def get_closing_price(self, date:datetime):
-        date = date.tz_localize('America/New_York')
-        data = self.data_history(period='3mo')
+        # Get period to fetch relative to date of transaction
+        period = self.categorize_date_for_fetching_data_history(date)
+        # Fetched data
+        data = self.data_history(period=period)
+        # Get closest closing price
         closest_inferior_date = self.find_closest_inferior_date(data, date)
         return data.at[closest_inferior_date, 'Close']
 

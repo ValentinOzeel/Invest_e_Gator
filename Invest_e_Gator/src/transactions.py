@@ -16,10 +16,6 @@ class Transaction():
                  fee: float
                  ):
         
-        validate_transaction(date_hour=date_hour, transaction_type=transaction_type,
-                             ticker=ticker, n_shares=n_shares, share_price=share_price, share_currency=share_currency,
-                             transact_currency=transact_currency, fee=fee)
-        
         self.date_hour = date_hour 
         self.transaction_type = transaction_type.lower()
         self.ticker = ticker.lower()
@@ -28,6 +24,10 @@ class Transaction():
         self.share_currency = share_currency.lower()
         self.fee = fee 
         self.transact_currency = transact_currency.lower()
+        
+        validate_transaction(date_hour=self.date_hour, transaction_type=self.transaction_type,
+                             ticker=self.ticker, n_shares=self.n_shares, share_price=self.share_price, share_currency=self.share_currency,
+                             transact_currency=self.transact_currency, fee=self.fee)
         
     @property
     def transaction_direction(self) -> Literal[1, -1]:

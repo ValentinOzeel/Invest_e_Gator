@@ -7,12 +7,13 @@ from Invest_e_Gator.src.secondary_modules.currency_conversion import currency_co
 from Invest_e_Gator.src.ticker import Ticker
 
 class PortfolioMetrics():
-    def __init__(self, transactions_df:pd.DataFrame, base_currency:str, start_date:datetime=None, end_date:datetime=None):
+    def __init__(self, transactions_df:pd.DataFrame, base_currency:str, start_date:datetime=None, end_date:datetime=None, today:bool=False):
         self.transactions_df = transactions_df
         self.base_currency = base_currency   
         
+        self.today = today        
         # Get days range from start to end
-        self.all_dates = self._get_all_dates(start_date, end_date)
+        self.all_dates = self._get_all_dates(start_date, end_date) if not self.today else [datetime.now()]
 
         self.df_metrics = None
         
@@ -27,7 +28,7 @@ class PortfolioMetrics():
         
     def compute_metrics(self):
 
-        df = self._compute_invested_and_value()
+        df = self._compute_invested_realized_and_value()
         return df
         
     def _compute_ticker_realized_loss(self, buys:pd.DataFrame, sales:pd.DataFrame):
@@ -63,18 +64,17 @@ class PortfolioMetrics():
                         df_buys.at[idx, 'remaining_shares'] = 0
                         remaining_shares_sold -= shares_bought
 
-        print('REALIZEDDDDDDD', realized_gains_losses)
         return sum(realized_gains_losses)
 
 
     def _compute_returns(self, value, realized, invested):
-        print(f'({value} + {realized} - {invested}) / {invested} = {(value + realized - invested) / invested}')
+        #print(f'({value} + {realized} - {invested}) / {invested} = {(value + realized - invested) / invested}')
         return (value + realized - invested) / invested
             
     def _compute_invested_realized_and_value(self):
         # Initialize a dict to store daily metrics
         daily_metrics = {}
-
+        
         # Iterate over each date
         for selected_date in self.all_dates:
             # Filter out transaction after selected_date
@@ -107,12 +107,14 @@ class PortfolioMetrics():
                 total_cost_base_currency = ticker_transactions['transact_amount_base_currency'].sum()
                 # Create Ticker object
                 ticker_obj = Ticker(ticker)
+                print(f'CLOSING PRICE FOR TICKER {ticker}')
                 # Get day value in base currency
                 day_value_base_currency = currency_conversion(
                     amount=ticker_obj.get_closing_price(selected_date), 
                     date_obj=selected_date, 
                     currency=ticker_obj.currency.lower(), 
-                    target_currency=self.base_currency
+                    target_currency=self.base_currency,
+                    today=self.today
                 )
                 # Total invested
                 invested = ticker_transactions['transact_amount_base_currency'].sum()
@@ -136,7 +138,7 @@ class PortfolioMetrics():
 
             # Calculate percentage portfolio value and percentage invested
             for ticker in position_values:
-                print(f'\n{ticker}')
+                #print(f'\n{ticker}')
                 position_ratio_pf_value[ticker] = position_values[ticker] / total_value if total_value != 0 else 0
                 position_ratio_invested[ticker] = position_total_invested[ticker] / total_invested if total_invested != 0 else 0
                 position_pl[ticker] = self._compute_returns(position_values[ticker], position_realizeds_losses[ticker], position_total_invested[ticker])
