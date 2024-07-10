@@ -50,6 +50,7 @@ class Portfolio:
         self.transactions_df = self.transactions_df._append({
             'date_hour': transaction.date_hour,
             'transaction_type': transaction.transaction_type,
+            'transaction_action': transaction.transaction_action,
             'ticker': transaction.ticker,
             'name': ticker_long_name,
             'tags': ticker_tags,
@@ -84,7 +85,8 @@ class Portfolio:
                 share_price=row['share_price'],
                 share_currency=row['share_currency'],
                 transact_currency=row['transact_currency'],
-                fee=row['fee']
+                fee=row['fee'],
+                transaction_action=row['transaction_action'] # 'real' (deliberate transaction) vs 'non_real' (stock split, reverse split etc...)
                 ), 
                 tags_dict
             )
@@ -94,7 +96,7 @@ class Portfolio:
     def _load_degiro_transactions(self, file_path: str):
         df = pd.read_csv(file_path)
         # Select some columns
-        df = df[['Datetime', 'Quantity', 'Ticker_symbol', 'Share_price', 'Currency_SP', 'Currency_TPIMC', 'Fee']]
+        df = df[['Datetime', 'Quantity', 'Ticker_symbol', 'Share_price', 'Currency_SP', 'Currency_TPIMC', 'Fee', 'transaction_action']]
         # Get transaction_type and n_shares
         df['transaction_type'] = df['Quantity'].apply(lambda x: 'buy' if x > 0 else 'sale')
         df['n_shares'] = df['Quantity'].apply(lambda x: abs(x))
@@ -105,12 +107,13 @@ class Portfolio:
                            "Share_price": "share_price",
                            "Currency_SP": "share_currency",
                            "Currency_TPIMC": "transact_currency",
-                           "Fee": "fee"
+                           "Fee": "fee",
+                           "Transaction_action": "transaction_action"
                             }
                   )
         return df
         
-    def compute_portfolio_metrics(self, start_date:datetime=None, end_date:datetime=None, today:bool=False):
+    def compute_portfolio_metrics(self, start_date:datetime=None, end_date:datetime=None, today:bool=True):
         pf_metrics = PortfolioMetrics(self.transactions_df, self.base_currency, start_date=start_date, end_date=end_date, today=today)
         results = pf_metrics.compute_metrics()
 
@@ -130,13 +133,58 @@ class Portfolio:
 
         
 if __name__ == "__main__":
+    import matplotlib
+    #%matplotlib inline
+    import quantstats as qs
+
+    # extend pandas functionality with metrics, etc.
+    qs.extend_pandas()
+    
+    
     
     portfolio = Portfolio()
     portfolio.load_transactions_from_csv(file_path=r'C:\Users\V.ozeel\Documents\Perso\Coding\Python\Projects\Finances\Invest_e_Gator\Invest_e_Gator\data\degiro_transactions\Valola\cleaned_transactions.csv',
                                          degiro=True)
+#
 
 
     metrics = portfolio.compute_portfolio_metrics(today=True)
-    #for date in metrics:
-    #    print(metrics[date], '\n')
+
     print(metrics)
+    
+    for i, col in enumerate(metrics.columns):
+        print(col.upper())
+        
+        if isinstance(DIIIIICT) ELSE PRINT VLAUE
+        for key, value in sorted(metrics.iat[0, i]):
+            print(f'{key} : {value}')
+        print('\n\n\n')
+    
+
+   # pf = []
+#
+   # # Get today's date normalized to midnight (00:00:00)
+   # today = pd.Timestamp.now().normalize()
+#
+   # # Filter rows where the date part of the index matches today's date
+   # metrics = metrics[metrics.index.normalize() == today]
+#
+   # print(metrics)
+#
+   # for key, value in sorted(metrics.iat[0, 7].items(), key=lambda x:x[1]):
+   #     print(f'{key.upper()} : {value}')
+   #     if key not in ['pltr', 'nvda', 'tsla', 'crwd']: continue
+   #     try:
+   #         stock = qs.utils.download_returns(key.upper())
+#
+   #         pf.append(value * stock)
+   #     except Exception as e:
+   #         print(f'COULDNT DO {key},    {e}')
+   #         continue
+
+    #pf = sum(pf)
+    ## show sharpe ratio
+    #qs.stats.sharpe(pf)
+    #pf_plot = qs.plots.snapshot(pf, title='Test Performance', show=True, savefig='pf')
+    #test = qs.reports.html(pf, "SPY", output=True)
+    #test = qs.reports.full(pf, title='Test Performance', show=True, savefig='stock1')

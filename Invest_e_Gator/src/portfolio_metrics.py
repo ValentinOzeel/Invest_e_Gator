@@ -1,16 +1,16 @@
-from typing import Union
+from typing import List, Union
 from datetime import datetime
 import pandas as pd
 import copy
 
 from Invest_e_Gator.src.secondary_modules.currency_conversion import currency_conversion
 from Invest_e_Gator.src.ticker import Ticker
+from Invest_e_Gator.src.constants import available_metrics
 
 class PortfolioMetrics():
     def __init__(self, transactions_df:pd.DataFrame, base_currency:str, start_date:datetime=None, end_date:datetime=None, today:bool=False):
         self.transactions_df = transactions_df
         self.base_currency = base_currency   
-        
         self.today = today        
         # Get days range from start to end
         self.all_dates = self._get_all_dates(start_date, end_date) if not self.today else [datetime.now()]
@@ -26,15 +26,31 @@ class PortfolioMetrics():
             end_d = self.transactions_df['date_hour'].max().date() + pd.Timedelta(days=1)
             return pd.date_range(start_d, end_d) 
         
-    def compute_metrics(self):
+    def compute_metrics(self, advanced_metrics:List=None):
+                
+        # Dict metric : bool_value
+        metrics_activation = {}
+            
+        # build metrics_activation according to privided metrics in list_metrics
+        if advanced_metrics:
+            # Validate metrics
+            if not all([metric in available_metrics for metric in advanced_metrics]):
+                raise ValueError(f'All metrics provided as list should be found in the available metrics: {available_metrics}')
+            
+            metrics_activation = {metric:metric in advanced_metrics for metric in available_metrics}
 
-        df = self._compute_invested_realized_and_value()
-        return df
+
+                
+        self.df_metrics = self._compute_general_metrics()
+        return self.df_metrics
         
     def _compute_ticker_realized_loss(self, buys:pd.DataFrame, sales:pd.DataFrame):
         
         df_buys, df_sales = copy.deepcopy(buys), copy.deepcopy(sales)
 
+        df_buys = df_buys[df_buys['transaction_action'] == 'real']
+        df_sales = df_sales[df_sales['transaction_action'] == 'real']
+        
         df_buys['remaining_shares'] = df_buys['n_shares']
 
         realized_gains_losses = []
@@ -71,7 +87,7 @@ class PortfolioMetrics():
         #print(f'({value} + {realized} - {invested}) / {invested} = {(value + realized - invested) / invested}')
         return (value + realized - invested) / invested
             
-    def _compute_invested_realized_and_value(self):
+    def _compute_general_metrics(self):
         # Initialize a dict to store daily metrics
         daily_metrics = {}
         
@@ -108,22 +124,31 @@ class PortfolioMetrics():
                 # Create Ticker object
                 ticker_obj = Ticker(ticker)
                 print(f'CLOSING PRICE FOR TICKER {ticker}')
-                # Get day value in base currency
-                day_value_base_currency = currency_conversion(
-                    amount=ticker_obj.get_closing_price(selected_date), 
-                    date_obj=selected_date, 
-                    currency=ticker_obj.currency.lower(), 
-                    target_currency=self.base_currency,
-                    today=self.today
-                )
-                # Total invested
-                invested = ticker_transactions['transact_amount_base_currency'].sum()
+                
+                # Total invested (check if real transaction)
+                invested = ticker_transactions[ticker_transactions['transaction_action'] == 'real']['transact_amount_base_currency'].sum()
+                #invested = ticker_transactions['transact_amount_base_currency'].sum()
                 # Cost average per share
                 cost_average = total_cost_base_currency / quantity if quantity else 0
                 # Calculate realized gains/losses
                 realized = self._compute_ticker_realized_loss(buys, sales)
-                # Calculate day position value
-                position_value_base_currency = quantity * day_value_base_currency
+                # Get day value in base currency
+                print(f'QUANTITY HELD {ticker} = {quantity}')
+                
+                try:
+                    day_value_base_currency = currency_conversion(
+                        amount=ticker_obj.get_closing_price(selected_date), 
+                        date_obj=selected_date, 
+                        currency=ticker_obj.currency.lower(), 
+                        target_currency=self.base_currency,
+                        today=self.today
+                    )
+                    # Calculate day position value
+                    position_value_base_currency = quantity * day_value_base_currency
+                except Exception as e:
+                    print(e)
+                    print(f'{ticker} might have been delisted.')
+                    position_value_base_currency = 0
                 
                 # Update dictionnaries
                 position_held[ticker] = quantity
@@ -146,16 +171,16 @@ class PortfolioMetrics():
 
             print(f'\n{selected_date} : positions {position_held}')
             daily_metrics[selected_date] = {
-                'position_held': position_held,
-                'position_values': position_values,
+                'position_held': position_held, 
+                'position_values': position_values, 
                 'position_invested': position_total_invested,
-                'position_cost_average': position_cost_average,
-                'position_realizeds_losses': position_realizeds_losses,
+                'position_cost_average': position_cost_average, 
+                'position_realizeds_losses': position_realizeds_losses, 
                 'position_pl': position_pl,
-                'position_ratio_invested': position_ratio_invested,
-                'position_ratio_pf_value': position_ratio_pf_value,
+                'position_ratio_invested': position_ratio_invested, 
+                'position_ratio_pf_value': position_ratio_pf_value, 
                 'total_value': total_value,
-                'total_invested': total_invested,
+                'total_invested': total_invested, 
                 'total_realized': total_realized,
                 'total_pl': self._compute_returns(total_value, total_realized, total_invested)
                 }

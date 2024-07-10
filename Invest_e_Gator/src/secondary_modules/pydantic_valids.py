@@ -144,6 +144,7 @@ class TransactionPydantic(BaseModel):
     share_currency: str
     transact_currency: str
     fee: Union[float, None]
+    transaction_action: Literal['real', 'non_real']
 
     @field_validator('date_hour')
     @classmethod

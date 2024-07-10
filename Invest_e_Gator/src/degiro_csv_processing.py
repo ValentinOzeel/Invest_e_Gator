@@ -203,7 +203,8 @@ class DataProcess:
         self.df = self.df.drop(columns=['Date', 'Hour'])
         # Convert the datetime to the desired format (american datetime) as string
         self.df['Datetime'] = self.df['Datetime'].dt.strftime('%m-%d-%Y %H:%M:%S')
-
+        # add detail about transaction: 'real' = deliberate transaction, 'non_real' = transaction due to stok split, reverse split etc...
+        self.df['Transaction_action'] = self.df['ID_order'].apply(lambda x: 'real' if isinstance(x, str) and x else 'non_real')
         # Based on the mapper file or morningstar wrapper, add ticker
         self._add_ticker_symbol()
 

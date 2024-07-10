@@ -102,7 +102,7 @@ class Ticker():
         target_date = target_date.tz_localize('America/New_York')
         # Ensure the index is in datetime format
         df.index = pd.to_datetime(df.index)
-        #print(df, 'VS', target_date)
+        print(df, 'VS', target_date)
         # Filter out dates greater than the target date
         inferior_dates = df[df.index <= target_date]
         if inferior_dates.empty:
@@ -116,9 +116,12 @@ class Ticker():
         period = self.categorize_date_for_fetching_data_history(date)
         # Fetched data
         data = self.data_history(period=period)
-        # Get closest closing price
-        closest_inferior_date = self.find_closest_inferior_date(data, date)
-        return data.at[closest_inferior_date, 'Close']
+        try:
+            # Get closest closing price
+            closest_inferior_date = self.find_closest_inferior_date(data, date)
+            return data.at[closest_inferior_date, 'Close']
+        except:
+            return None
 
     def financials(self, income_stmt:bool=True, balance_sheet:bool=False, cash_flow:bool=False, quarterly:bool=False, pretty:bool=False):
         """

@@ -1,3 +1,19 @@
+available_metrics = [   
+                     'list_metics',
+                     'position_held',
+                     'position_values',
+                     'position_invested',
+                     'position_cost_average',
+                     'position_realizeds_losses',
+                     'position_pl',
+                     'position_ratio_invested',
+                     'position_ratio_pf_value',
+                     'total_value',
+                     'total_invested',
+                     'total_realized',
+                     'total_pl'
+                     ]
+
 available_currencies = ['usd', 'eur', 'jpy', 'gbp', 'aud', 'cad', 'chf', 'cny', 'hkd', 'nzd', 'sgd', 
                         'krw', 'inr', 'rub', 'brl', 'mxn', 'zar', 'try', 'pln', 'dkk', 'sek', 'nok', 
                         'czk', 'ils', 'myr', 'thb', 'idr', 'huf', 'ron', 'bgn', 'hrk', 'ltl', 'php']
