@@ -102,7 +102,6 @@ class Ticker():
         target_date = target_date.tz_localize('America/New_York')
         # Ensure the index is in datetime format
         df.index = pd.to_datetime(df.index)
-        print(df, 'VS', target_date)
         # Filter out dates greater than the target date
         inferior_dates = df[df.index <= target_date]
         if inferior_dates.empty:

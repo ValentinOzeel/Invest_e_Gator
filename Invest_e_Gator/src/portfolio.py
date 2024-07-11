@@ -113,11 +113,15 @@ class Portfolio:
                   )
         return df
         
-    def compute_portfolio_metrics(self, start_date:datetime=None, end_date:datetime=None, today:bool=True):
+    def compute_portfolio_metrics(self, start_date:datetime=None, end_date:datetime=None, today:bool=True, plot_current:bool=True):
         pf_metrics = PortfolioMetrics(self.transactions_df, self.base_currency, start_date=start_date, end_date=end_date, today=today)
         results = pf_metrics.compute_metrics()
-
+        if plot_current:
+            pf_metrics._plot_current_metrics(results)
         return results
+
+
+
 
 
 
@@ -155,9 +159,13 @@ if __name__ == "__main__":
     for i, col in enumerate(metrics.columns):
         print(col.upper())
         
-        if isinstance(DIIIIICT) ELSE PRINT VLAUE
-        for key, value in sorted(metrics.iat[0, i]):
-            print(f'{key} : {value}')
+        element = metrics.iat[0, i]
+        
+        if isinstance(element, Dict):
+            for key, value in sorted(element.items(), key=lambda x:x[1]):
+                print(f'{key} : {value}')
+        else:
+            print(element)
         print('\n\n\n')
     
 

@@ -1,17 +1,16 @@
 available_metrics = [   
-                     'list_metics',
-                     'position_held',
-                     'position_values',
-                     'position_invested',
-                     'position_cost_average',
-                     'position_realizeds_losses',
-                     'position_pl',
-                     'position_ratio_invested',
-                     'position_ratio_pf_value',
-                     'total_value',
-                     'total_invested',
-                     'total_realized',
-                     'total_pl'
+                     'position_held',                    # n shares held per ticker
+                     'position_values',                  # position value per ticker 
+                     'position_invested',                # amount invested per ticker
+                     'position_cost_average',            # share's cost average per ticker
+                     'position_realized_gains_losses',   # realized gains/losses per ticker
+                     'position_pl',                      # return (p/l) per ticker
+                     'position_ratio_invested',          # amount invested per ticker / total amount invested
+                     'position_ratio_pf_value',          # position value per ticker / total portfolio value
+                     'total_value',                      # total portfolio value
+                     'total_invested',                   # total amount invested
+                     'total_realized',                   # total realized gains/losses
+                     'total_pl'                          # total portfolio return (p/l)
                      ]
 
 available_currencies = ['usd', 'eur', 'jpy', 'gbp', 'aud', 'cad', 'chf', 'cny', 'hkd', 'nzd', 'sgd', 

@@ -1,7 +1,9 @@
-from typing import List, Union
+from typing import List, Dict, Union
 from datetime import datetime
+import numpy as np
 import pandas as pd
 import copy
+import matplotlib.pyplot as plt
 
 from Invest_e_Gator.src.secondary_modules.currency_conversion import currency_conversion
 from Invest_e_Gator.src.ticker import Ticker
@@ -123,7 +125,6 @@ class PortfolioMetrics():
                 total_cost_base_currency = ticker_transactions['transact_amount_base_currency'].sum()
                 # Create Ticker object
                 ticker_obj = Ticker(ticker)
-                print(f'CLOSING PRICE FOR TICKER {ticker}')
                 
                 # Total invested (check if real transaction)
                 invested = ticker_transactions[ticker_transactions['transaction_action'] == 'real']['transact_amount_base_currency'].sum()
@@ -133,7 +134,6 @@ class PortfolioMetrics():
                 # Calculate realized gains/losses
                 realized = self._compute_ticker_realized_loss(buys, sales)
                 # Get day value in base currency
-                print(f'QUANTITY HELD {ticker} = {quantity}')
                 
                 try:
                     day_value_base_currency = currency_conversion(
@@ -149,6 +149,7 @@ class PortfolioMetrics():
                     print(e)
                     print(f'{ticker} might have been delisted.')
                     position_value_base_currency = 0
+                
                 
                 # Update dictionnaries
                 position_held[ticker] = quantity
@@ -169,13 +170,12 @@ class PortfolioMetrics():
                 position_pl[ticker] = self._compute_returns(position_values[ticker], position_realizeds_losses[ticker], position_total_invested[ticker])
 
 
-            print(f'\n{selected_date} : positions {position_held}')
             daily_metrics[selected_date] = {
                 'position_held': position_held, 
                 'position_values': position_values, 
                 'position_invested': position_total_invested,
                 'position_cost_average': position_cost_average, 
-                'position_realizeds_losses': position_realizeds_losses, 
+                'position_realized_gains_losses': position_realizeds_losses, 
                 'position_pl': position_pl,
                 'position_ratio_invested': position_ratio_invested, 
                 'position_ratio_pf_value': position_ratio_pf_value, 
@@ -189,4 +189,118 @@ class PortfolioMetrics():
         return pd.DataFrame.from_dict(daily_metrics, orient='index')
     
 
-    
+    def _plot_current_metrics(self, metrics:pd.DataFrame):
+
+        def get_current_metrics_as_series(df):
+            # Ensure the index is of datetime type
+            df.index = pd.to_datetime(df.index)
+            # Get today's date using datetime module
+            today = datetime.now()
+            # Calculate the absolute difference between each date and today
+            df['diff'] = np.abs(df.index - today)
+            # Find the index of the minimum difference
+            closest_date_index = df['diff'].idxmin()
+            # Drop the 'diff' column 
+            df = df.drop(columns=['diff'])
+            # Get the row with the closest date to today
+            closest_row = df.loc[closest_date_index]
+            return closest_row
+
+        def bar_plot(ax, title, keys, values):
+            ax.bar(keys, values)
+            ax.set_title(title)
+            ax.tick_params(axis='x', rotation=75)
+            ax.set_yscale('log')
+        
+        def stacked_bars_plot(ax, title, keys, values, stack_values):
+            ax.bar(keys, values)
+            ax.bar(keys, stack_values, bottom=0, alpha=0.75)
+            ax.set_title(title)
+            ax.tick_params(axis='x', rotation=75)
+            ax.set_yscale('log')
+            
+        def scatter_plot(ax, title, keys, values):
+            ax.scatter(keys, values)
+            ax.set_title(title)
+            ax.tick_params(axis='x', rotation=75)
+                
+        def pie_plot(ax, title, keys, values):
+            ax.pie(values, labels=keys, autopct='%1.1f%%', startangle=140)
+            ax.set_title(title)
+
+
+            
+        def text_plot(ax, titles_values):
+            to_display = '\n '.join([f'{title} = {value:.2f}' for title, value in titles_values.items()])
+
+            ax.text(
+                0.5, 0.5, to_display, 
+                horizontalalignment='center', verticalalignment='center', fontsize=20, transform=ax.transAxes
+                         )
+            # Hide grid lines
+            ax.grid(False)
+            # Hide axes ticks
+            ax.set_xticks([])
+            ax.set_yticks([])
+            
+
+
+
+
+
+
+        metrics = get_current_metrics_as_series(metrics)
+        
+        # Create a figure with subplots
+        fig, axes = plt.subplots(7, 1, figsize=(15, 35))
+
+        plot_instructions = {
+            'position_values':   [axes[0], 'Position current values', bar_plot],
+            'position_invested': [axes[1], 'Total invested', bar_plot],
+            'position_ratio_invested' : [axes[2], 'Amount invested / total invested', bar_plot],
+            'position_ratio_pf_value' : [axes[3], 'Position value / total pf value', bar_plot],
+            'position_cost_average': [axes[4], 'Cost average per share VS current share price', stacked_bars_plot],
+            'position_pl' : [axes[5], 'P/L', scatter_plot],
+            'total_value': [axes[6], 'Portfolio value', text_plot],
+            'total_invested': [axes[6], 'Total amount invested', text_plot],
+            'total_realized': [axes[6], 'Portfolio realized gains/losses', text_plot],
+            'total_pl': [axes[6], 'Portfolio P/L', text_plot], 
+        }
+        
+        single_text_plot = ['total_value', 'total_invested', 'total_realized', 'total_pl']
+        to_text_plot = {}
+
+        for metric in metrics.index:
+            if not metric in plot_instructions.keys(): continue
+            
+            metric_value = metrics.at[metric]  
+            
+            if isinstance(metric_value, Dict):
+                metric_value = dict(sorted(metric_value.items(), key=lambda x:x[1]))
+
+            
+            if metric == 'position_cost_average':
+                current_prices = {ticker : Ticker(ticker).get_closing_price(datetime.now()) for ticker in list(metric_value.keys())}
+                current_prices = {key: (value if value is not None else 0) for key, value in current_prices.items()}
+                stacked_bars_plot(plot_instructions[metric][0], plot_instructions[metric][1], list(metric_value.keys()), list(metric_value.values()), list(current_prices.values()))
+
+            elif metric in single_text_plot:
+                to_text_plot[plot_instructions[metric][1]] = metric_value
+            
+            else: 
+                plot_instructions[metric][2](
+                        ax = plot_instructions[metric][0],
+                        title = plot_instructions[metric][1],
+                        keys = list(metric_value.keys()),
+                        values = list(metric_value.values())
+                    )
+            
+        text_plot(axes[6], to_text_plot)
+                
+        # Adjust layout for better spacing
+        plt.tight_layout()
+
+        plt.savefig('test')
+        # Show the plot
+        plt.show()
+
