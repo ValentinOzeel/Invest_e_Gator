@@ -4,6 +4,10 @@ import numpy as np
 import pandas as pd
 import copy
 import matplotlib.pyplot as plt
+import matplotlib.cm as cm
+from matplotlib.patches import PathPatch
+import matplotlib.path as mpath
+import matplotlib.ticker as mtick
 
 from Invest_e_Gator.src.secondary_modules.currency_conversion import currency_conversion
 from Invest_e_Gator.src.ticker import Ticker
@@ -189,118 +193,171 @@ class PortfolioMetrics():
         return pd.DataFrame.from_dict(daily_metrics, orient='index')
     
 
-    def _plot_current_metrics(self, metrics:pd.DataFrame):
-
+    def _plot_current_metrics(self, metrics: pd.DataFrame):
         def get_current_metrics_as_series(df):
-            # Ensure the index is of datetime type
             df.index = pd.to_datetime(df.index)
-            # Get today's date using datetime module
             today = datetime.now()
-            # Calculate the absolute difference between each date and today
             df['diff'] = np.abs(df.index - today)
-            # Find the index of the minimum difference
             closest_date_index = df['diff'].idxmin()
-            # Drop the 'diff' column 
             df = df.drop(columns=['diff'])
-            # Get the row with the closest date to today
             closest_row = df.loc[closest_date_index]
             return closest_row
 
+        def create_gradient_bar(ax, x, y, width, height, cmap, norm):
+            verts = [(x, 0), (x, height), (x + width, height), (x + width, 0), (x, 0)]
+            codes = [mpath.Path.MOVETO, mpath.Path.LINETO, mpath.Path.LINETO, mpath.Path.LINETO, mpath.Path.CLOSEPOLY]
+            path = mpath.Path(verts, codes)
+            patch = PathPatch(path, facecolor='none', edgecolor='none')
+            ax.add_patch(patch)
+            gradient = np.linspace(norm(0), norm(height), 256)
+            ax.imshow(np.atleast_2d(gradient).T, extent=(x, x + width, 0, height), origin='lower', aspect='auto', cmap=cmap)
+
         def bar_plot(ax, title, keys, values):
-            ax.bar(keys, values)
-            ax.set_title(title)
-            ax.tick_params(axis='x', rotation=75)
-            ax.set_yscale('log')
-        
+            cmap = cm.get_cmap('viridis')
+            norm = plt.Normalize(min(values), max(values))
+            for i, key in enumerate(keys):
+                create_gradient_bar(ax, i - 0.4, 0, 0.8, values[i], cmap, norm)
+            
+            ax.set_xticks(range(len(keys)))
+            ax.set_xticklabels(keys, rotation=60)
+            ax.set_title(title, fontsize=20)
+            ax.grid(axis='y', color='black', linestyle='--', alpha=0.5)
+            ax.grid(False, axis='x')
+            ax.set_axisbelow(True)
+            
+            if '/' in title:
+                ax.yaxis.set_major_formatter(mtick.PercentFormatter(1, 0))
+                for i, value in enumerate(values):
+                    ax.text(i, value, f'{value*100:.1f}', ha='center', va='bottom', fontsize=6, weight='bold')
+            else:
+                ax.set_yscale('log')
+                for i, value in enumerate(values):
+                    ax.text(i, value, f'{value:.0f}', ha='center', va='bottom', fontsize=6, weight='bold')
+
+
+
+
+
         def stacked_bars_plot(ax, title, keys, values, stack_values):
-            ax.bar(keys, values)
-            ax.bar(keys, stack_values, bottom=0, alpha=0.75)
-            ax.set_title(title)
-            ax.tick_params(axis='x', rotation=75)
+            ax.bar(keys, values, color='#5e0000', alpha=0.9)
+            ax.bar(keys, stack_values, bottom=0, color='#0d850d', alpha=0.7)
+            ax.set_title(title, fontsize=20)
+            ax.tick_params(axis='x', rotation=60)
             ax.set_yscale('log')
-            
+            ax.grid(axis='y', color='black', linestyle='--', alpha=0.5)
+            ax.grid(False, axis='x')
+            splits = title.split(' vs ')
+            ax.legend(splits)
+
+
         def scatter_plot(ax, title, keys, values):
-            ax.scatter(keys, values)
-            ax.set_title(title)
-            ax.tick_params(axis='x', rotation=75)
-                
-        def pie_plot(ax, title, keys, values):
-            ax.pie(values, labels=keys, autopct='%1.1f%%', startangle=140)
-            ax.set_title(title)
+            colors= ['#fde725', '#7ad151', '#22a884', '#2a788e', '#414487', '#440154']
+            i, c = 0, []
+            for key in keys:
+                c.append(colors[i])
+                i += 1
+                if i == 6: i = 0
+            ax.scatter(keys, values, c=c, alpha=0.7)
+            ax.set_title(title, fontsize=14)
+            ax.tick_params(axis='x', rotation=60)
+            ax.grid(axis='y', color='black', linestyle='--', alpha=0.5)
+            ax.grid(False, axis='x')
 
 
+        def radial_chart_plot(ax, title, keys, values):
+            max_value_full_ring = max(values)
+            ring_colours = ['#2f4b7c', '#665191', '#a05195', '#d45087', '#f95d6a', '#ff7c43', '#ffa600']  # Adjust colors as needed
+            ring_labels = [f'{x} ({v})' for x, v in zip(keys, values)]
+            data_len = len(keys)
+        
+            rect = [0.1, 0.1, 0.3, 0.3]
+            ax_polar_bg = fig.add_axes(rect, polar=True, frameon=False)
+            ax_polar_bg.set_theta_zero_location('N')
+            ax_polar_bg.set_theta_direction(1)
+        
+            for i in range(data_len):
+                ax_polar_bg.barh(i, max_value_full_ring * 1.5 * np.pi / max_value_full_ring, color='grey', alpha=0.1)
+            ax_polar_bg.axis('off')
+        
+            ax_polar = fig.add_axes(rect, polar=True, frameon=False)
+            ax_polar.set_theta_zero_location('N')
+            ax_polar.set_theta_direction(1)
+            ax_polar.set_rgrids(np.linspace(0, max_value_full_ring, data_len), labels=ring_labels, angle=0, fontsize=14, fontweight='bold', color='white', verticalalignment='center')
+        
+            for i in range(data_len):
+                ax_polar.barh(i, values[i] * 1.5 * np.pi / max_value_full_ring, color=ring_colours[i % len(ring_colours)])
+        
+            ax_polar.grid(False)
+            ax_polar.tick_params(axis='both', left=False, bottom=False, labelbottom=False, labelleft=True)
+            ax_polar.set_title(title, fontsize=14, color='white')
             
-        def text_plot(ax, titles_values):
-            to_display = '\n '.join([f'{title} = {value:.2f}' for title, value in titles_values.items()])
+        def pie_plot(ax, title, keys, values):
+            wedges, texts, autotexts = ax.pie(values, labels=keys, autopct='%1.1f%%', startangle=140, colors=plt.cm.Paired(np.arange(len(keys))))
+            ax.set_title(title, fontsize=14)
+            for text in texts + autotexts:
+                text.set_fontsize(12)
 
-            ax.text(
-                0.5, 0.5, to_display, 
-                horizontalalignment='center', verticalalignment='center', fontsize=20, transform=ax.transAxes
-                         )
-            # Hide grid lines
+        def text_plot(ax, titles_values):
+            to_display = '\n'.join([f'{title} = {value:.2f}' for title, value in titles_values.items()])
+            ax.text(0.5, 0.5, to_display, horizontalalignment='center', verticalalignment='center', fontsize=20, transform=ax.transAxes)
             ax.grid(False)
-            # Hide axes ticks
             ax.set_xticks([])
             ax.set_yticks([])
-            
-
-
-
-
-
 
         metrics = get_current_metrics_as_series(metrics)
-        
-        # Create a figure with subplots
-        fig, axes = plt.subplots(7, 1, figsize=(15, 35))
+        fig, axes = plt.subplots(7, 1, figsize=(25, 35))
+
 
         plot_instructions = {
-            'position_values':   [axes[0], 'Position current values', bar_plot],
-            'position_invested': [axes[1], 'Total invested', bar_plot],
-            'position_ratio_invested' : [axes[2], 'Amount invested / total invested', bar_plot],
-            'position_ratio_pf_value' : [axes[3], 'Position value / total pf value', bar_plot],
-            'position_cost_average': [axes[4], 'Cost average per share VS current share price', stacked_bars_plot],
-            'position_pl' : [axes[5], 'P/L', scatter_plot],
-            'total_value': [axes[6], 'Portfolio value', text_plot],
-            'total_invested': [axes[6], 'Total amount invested', text_plot],
-            'total_realized': [axes[6], 'Portfolio realized gains/losses', text_plot],
-            'total_pl': [axes[6], 'Portfolio P/L', text_plot], 
+            'position_values': [axes[0], 'Position Current Values', bar_plot],
+            'position_invested': [axes[1], 'Total Invested', bar_plot],
+            'position_ratio_invested': [axes[2], 'Amount Invested / Total Invested', bar_plot],
+            'position_ratio_pf_value': [axes[3], 'Position Value / Total Portfolio Value', bar_plot],
+            'position_cost_average': [axes[4], 'Cost Average per Share vs Current Share Price', stacked_bars_plot],
+            'position_pl': [axes[5], 'P/L', scatter_plot],
+            'total_value': [axes[6], 'Portfolio Value', text_plot],
+            'total_invested': [axes[6], 'Total Amount Invested', text_plot],
+            'total_realized': [axes[6], 'Portfolio Realized Gains/Losses', text_plot],
+            'total_pl': [axes[6], 'Portfolio P/L', text_plot],
         }
-        
+
         single_text_plot = ['total_value', 'total_invested', 'total_realized', 'total_pl']
         to_text_plot = {}
 
         for metric in metrics.index:
-            if not metric in plot_instructions.keys(): continue
+            if metric not in plot_instructions.keys():
+                continue
             
-            metric_value = metrics.at[metric]  
+            metric_value = metrics.at[metric]
             
             if isinstance(metric_value, Dict):
-                metric_value = dict(sorted(metric_value.items(), key=lambda x:x[1]))
+                metric_value = dict(sorted(metric_value.items(), key=lambda x: x[1]))
 
-            
             if metric == 'position_cost_average':
-                current_prices = {ticker : Ticker(ticker).get_closing_price(datetime.now()) for ticker in list(metric_value.keys())}
+                sorting = dict(sorted(metrics.at['position_values'].items(), key=lambda x: x[1]))
+                metric_value = dict(sorted(metric_value.items(), key=lambda item: sorting[item[0]]))
+                
+                current_prices = {ticker: Ticker(ticker).get_closing_price(datetime.now()) for ticker in list(metric_value.keys())}
                 current_prices = {key: (value if value is not None else 0) for key, value in current_prices.items()}
+                current_prices = dict(sorted(current_prices.items(), key=lambda item: sorting[item[0]]))
+                
                 stacked_bars_plot(plot_instructions[metric][0], plot_instructions[metric][1], list(metric_value.keys()), list(metric_value.values()), list(current_prices.values()))
 
             elif metric in single_text_plot:
                 to_text_plot[plot_instructions[metric][1]] = metric_value
             
-            else: 
+            else:
                 plot_instructions[metric][2](
-                        ax = plot_instructions[metric][0],
-                        title = plot_instructions[metric][1],
-                        keys = list(metric_value.keys()),
-                        values = list(metric_value.values())
-                    )
-            
+                    ax=plot_instructions[metric][0],
+                    title=plot_instructions[metric][1],
+                    keys=list(metric_value.keys()),
+                    values=list(metric_value.values())
+                )
+
         text_plot(axes[6], to_text_plot)
-                
-        # Adjust layout for better spacing
-        plt.tight_layout()
+        
+        fig.subplots_adjust(hspace=0.5, top=0.95, bottom=0.05, left=0.05, right=0.95)  # Customize these values as needed
 
-        plt.savefig('test')
-        # Show the plot
+        plt.savefig('enhanced_metrics_plot.png')
+
         plt.show()
-
