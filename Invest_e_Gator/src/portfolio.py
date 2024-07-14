@@ -114,39 +114,110 @@ class Portfolio:
         return df
     
     
-    def tags_allocation(self, ticker_tags:Dict[str:Dict], alloc_tags:Dict, alloc_subtags:Dict[str:Dict], other_tags:List):
+    
+
+    
+    def tags_allocation(self, ticker_tags:Dict[str:Dict], alloc_tags:Dict, alloc_subtags:Dict[str:Dict]):
+        def stacked_radial_chart_plot(ax, title: str, data: Dict[str, Dict[str, float]]):
+            main_tags = list(data.keys())
+            main_tag_values = [data[tag]['value'] for tag in main_tags]
+            subtags = {tag: {k: v for k, v in data[tag].items() if k != 'value'} for tag in main_tags}
+
+            max_value_full_ring = max(main_tag_values)
+            ring_colours = ['#2f4b7c', '#665191', '#a05195', '#d45087', '#f95d6a', '#ff7c43', '#ffa600']
+            data_len = len(main_tags)
+
+            # Ensure the radial chart fits within the subplot's dimensions
+            rect = ax.get_position()
+            ax_polar_bg = plt.subplot(projection='polar', position=[rect.x0, rect.y0, rect.width, rect.height])
+            ax_polar_bg.set_theta_zero_location('N')
+            ax_polar_bg.set_theta_direction(1)
+
+            # Plot background grey bars
+            for i in range(data_len):
+                ax_polar_bg.barh(i, max_value_full_ring * 1.5 * np.pi / max_value_full_ring, color='grey', alpha=0.1)
+            ax_polar_bg.axis('off')
+
+            ax_polar = plt.subplot(projection='polar', position=[rect.x0, rect.y0, rect.width, rect.height])
+            ax_polar.set_theta_zero_location('N')
+            ax_polar.set_theta_direction(1)
+
+            # Plot data bars with stacked sub-bars
+            for i, main_tag in enumerate(main_tags):
+                start_angle = 0
+                for j, (subtag, subvalue) in enumerate(subtags[main_tag].items()):
+                    bar = ax_polar.barh(i, subvalue * 1.5 * np.pi / max_value_full_ring, left=start_angle, color=ring_colours[j % len(ring_colours)])
+                    start_angle += subvalue * 1.5 * np.pi / max_value_full_ring
+
+                    # Annotate subtags
+                    angle = (start_angle - subvalue * 1.5 * np.pi / (2 * max_value_full_ring))
+                    ax_polar.text(angle, i, subtag, ha='center', va='center', fontsize=8, color='black')
+
+            # Annotate main tags on the radial chart
+            for i, main_tag in enumerate(main_tags):
+                angle = i * (2 * np.pi / data_len)
+                ax_polar.text(angle, max_value_full_ring + 0.1, main_tag, ha='center', va='center', fontsize=10, color='black')
+
+            ax_polar.grid(False)
+            ax_polar.tick_params(axis='both', left=False, bottom=False, labelbottom=False, labelleft=False)
+            ax_polar.set_title(title, fontsize=14, color='black', loc='center', pad=20)
+
+        '''
+        alloc_tags ahould bew as {
+                                    'main_tag_1': {
+                                                'weight': 0.3, 'subtags': {'subtag_1': weight, 'subtag_2': weight, ...}
+                                                }
+                                    ...
+                                }
+        '''
+        if sum(alloc_tags.values()) > 1:
+            raise ValueError('The sum of alloc_tags values should be <= 1.')
         
-        if sum(alloc_tags.values()) > 1: raise ValueError('The sum of alloc_tags values should be <= 1.')
+        cv_per_tag = {}         
+        tags_actual_alloc = sum(self.current_value.values())
         
-        cv_per_tag = {}
-        total_value_pf =
-        tag_actual_alloc = {}
         
+        # GET CURRENT VALUES
+        total_value_pf = self.metrics['total_pl']
+        position_values = self.current_metrics['position_values']
+        
+        # Calculate actual allocations per tag
         for ticker, tags in ticker_tags.items():
-            if tags:
-                for tag, weight in tags.items():
-                    if not cv_per_tag.get(tag, None):
-                        cv_per_tag[tag] = weight * self.current_value[ticker]
-                    else:
-                        cv_per_tag[tag] += weight * self.current_value[ticker]
-        
-        for main_tags in alloc_tags.keys(): 
-            tag_actual_alloc[main_tags] = sum[self.current_value[ticker] for ticker in self.current_values if ticker in tag_ticker[tag]] / self.current_pf_value
             
-        if alloc_subtags:
-            for 
+            for main_tag, mt_dict in tags.items():
+                cv_per_tag[main_tag] = {'value': (cv_per_tag.get(main_tag, 0) + mt_dict['weight'] * position_values[ticker]) / total_value_pf}
+                
+                for subtag, weight in mt_dict['subtags'].items():
+                   cv_per_tag[main_tag][subtag] = (cv_per_tag.get(subtag, 0) + weight * position_values[ticker]) / total_value_pf
+        # Store the results
+        self.tags_actual_alloc = tags_actual_alloc
+    
+    # self.tags_actual_alloc
+       # {'maintag_1': {'value': 0.25, 
+       #                'subtag_1': 0.3, 
+       #                'subtag2':0.7},
+       #  
+       #  'maintag_2': ['value': 0.75]
+       #  }
         
+    def compute_portfolio_metrics(self, 
+                                  #start_date:datetime=None, end_date:datetime=None, 
+                                  today:bool=True, plot_current:bool=True):
         
-    def compute_portfolio_metrics(self, start_date:datetime=None, end_date:datetime=None, today:bool=True, plot_current:bool=True):
-        pf_metrics = PortfolioMetrics(self.transactions_df, self.base_currency, start_date=start_date, end_date=end_date, today=today)
-        results = pf_metrics.compute_metrics()
+        pf_metrics = PortfolioMetrics(self.transactions_df, self.base_currency, 
+                                      #start_date=start_date, end_date=end_date, 
+                                      today=today)
+        
+        self.metrics = pf_metrics.compute_metrics()
+        # Identify the closest key to today's date
+        today = pd.Timestamp.now()
+        closest_date = self.metrics.index[np.abs(self.metrics.index - today).argmin()]
+        # Access the element at column 'pl_value' for the identified closest date
+        self.current_metrics = self.metrics.loc[closest_date,:]
+        
         if plot_current:
-            pf_metrics._plot_current_metrics(results)
-        return results
-
-
-
-
+            pf_metrics._plot_current_metrics(self.metrics)
+        return self.metrics
 
 
     def calculate_metrics(self, benchmark_ticker: str = '^GSPC'):

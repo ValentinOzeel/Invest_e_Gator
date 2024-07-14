@@ -190,8 +190,10 @@ class PortfolioMetrics():
                 }
             
         
-        return pd.DataFrame.from_dict(daily_metrics, orient='index')
-    
+        df = pd.DataFrame.from_dict(daily_metrics, orient='index')
+        # Convert index to DateTimeIndex (if not already)
+        df.index = pd.to_datetime(df.index)
+        return df
 
     def _plot_current_metrics(self, metrics: pd.DataFrame):
         def get_current_metrics_as_series(df):
