@@ -112,6 +112,30 @@ class Portfolio:
                             }
                   )
         return df
+    
+    
+    def tags_allocation(self, ticker_tags:Dict[str:Dict], alloc_tags:Dict, alloc_subtags:Dict[str:Dict], other_tags:List):
+        
+        if sum(alloc_tags.values()) > 1: raise ValueError('The sum of alloc_tags values should be <= 1.')
+        
+        cv_per_tag = {}
+        total_value_pf =
+        tag_actual_alloc = {}
+        
+        for ticker, tags in ticker_tags.items():
+            if tags:
+                for tag, weight in tags.items():
+                    if not cv_per_tag.get(tag, None):
+                        cv_per_tag[tag] = weight * self.current_value[ticker]
+                    else:
+                        cv_per_tag[tag] += weight * self.current_value[ticker]
+        
+        for main_tags in alloc_tags.keys(): 
+            tag_actual_alloc[main_tags] = sum[self.current_value[ticker] for ticker in self.current_values if ticker in tag_ticker[tag]] / self.current_pf_value
+            
+        if alloc_subtags:
+            for 
+        
         
     def compute_portfolio_metrics(self, start_date:datetime=None, end_date:datetime=None, today:bool=True, plot_current:bool=True):
         pf_metrics = PortfolioMetrics(self.transactions_df, self.base_currency, start_date=start_date, end_date=end_date, today=today)
