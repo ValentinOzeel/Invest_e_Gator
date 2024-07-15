@@ -1,8 +1,12 @@
 from typing import List, Dict, Union
 from datetime import datetime
+
+import os
 import numpy as np
 import pandas as pd
 import copy
+from pathlib import Path
+
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
 from matplotlib.patches import PathPatch
@@ -11,7 +15,7 @@ import matplotlib.ticker as mtick
 
 from Invest_e_Gator.src.secondary_modules.currency_conversion import currency_conversion
 from Invest_e_Gator.src.ticker import Ticker
-from Invest_e_Gator.src.constants import available_metrics
+from Invest_e_Gator.src.constants import available_metrics, results_path
 
 class PortfolioMetrics():
     def __init__(self, transactions_df:pd.DataFrame, base_currency:str, start_date:datetime=None, end_date:datetime=None, today:bool=False):
@@ -220,9 +224,16 @@ class PortfolioMetrics():
             for i, key in enumerate(keys):
                 create_gradient_bar(ax, i - 0.4, 0, 0.8, values[i], cmap, norm)
             
+            ax.set_title(title, fontsize=20, color='black')
             ax.set_xticks(range(len(keys)))
-            ax.set_xticklabels(keys, rotation=60)
-            ax.set_title(title, fontsize=20)
+            ax.set_xticklabels(keys)
+
+            ax.tick_params(axis='x', rotation=60, colors='black')
+            ax.tick_params(axis='y', colors='black')
+        
+        #   ax.xaxis.label.set_color('white')
+        #   ax.spines['left'].set_color('white')        # setting up Y-axis tick color to red
+        #   ax.spines['bottom'].set_color('white')         #setting up above X-axis tick color to red
             ax.grid(axis='y', color='black', linestyle='--', alpha=0.5)
             ax.grid(False, axis='x')
             ax.set_axisbelow(True)
@@ -243,8 +254,12 @@ class PortfolioMetrics():
         def stacked_bars_plot(ax, title, keys, values, stack_values):
             ax.bar(keys, values, color='#5e0000', alpha=0.9)
             ax.bar(keys, stack_values, bottom=0, color='#0d850d', alpha=0.7)
-            ax.set_title(title, fontsize=20)
-            ax.tick_params(axis='x', rotation=60)
+            ax.set_title(title, fontsize=20, color='black')
+            ax.tick_params(axis='x', rotation=60, colors='black')
+            ax.tick_params(axis='y', colors='black')
+         #   ax.xaxis.label.set_color('white')
+         #   ax.spines['left'].set_color('white')        # setting up Y-axis tick color to red
+         #   ax.spines['bottom'].set_color('white')         #setting up above X-axis tick color to red
             ax.set_yscale('log')
             ax.grid(axis='y', color='black', linestyle='--', alpha=0.5)
             ax.grid(False, axis='x')
@@ -260,44 +275,14 @@ class PortfolioMetrics():
                 i += 1
                 if i == 6: i = 0
             ax.scatter(keys, values, c=c, alpha=0.7)
-            ax.set_title(title, fontsize=14)
-            ax.tick_params(axis='x', rotation=60)
+            ax.set_title(title, fontsize=14, color='black')
+            ax.tick_params(axis='x', rotation=60, colors='black')
+            ax.tick_params(axis='y', colors='black')
+           # ax.xaxis.label.set_color('black')
+           # ax.spines['left'].set_color('black')        # setting up Y-axis tick color to red
+           # ax.spines['bottom'].set_color('black')         #setting up above X-axis tick color to red
             ax.grid(axis='y', color='black', linestyle='--', alpha=0.5)
             ax.grid(False, axis='x')
-
-
-        def radial_chart_plot(ax, title, keys, values):
-            max_value_full_ring = max(values)
-            ring_colours = ['#2f4b7c', '#665191', '#a05195', '#d45087', '#f95d6a', '#ff7c43', '#ffa600']  # Adjust colors as needed
-            ring_labels = [f'{x} ({v})' for x, v in zip(keys, values)]
-            data_len = len(keys)
-        
-            rect = [0.1, 0.1, 0.3, 0.3]
-            ax_polar_bg = fig.add_axes(rect, polar=True, frameon=False)
-            ax_polar_bg.set_theta_zero_location('N')
-            ax_polar_bg.set_theta_direction(1)
-        
-            for i in range(data_len):
-                ax_polar_bg.barh(i, max_value_full_ring * 1.5 * np.pi / max_value_full_ring, color='grey', alpha=0.1)
-            ax_polar_bg.axis('off')
-        
-            ax_polar = fig.add_axes(rect, polar=True, frameon=False)
-            ax_polar.set_theta_zero_location('N')
-            ax_polar.set_theta_direction(1)
-            ax_polar.set_rgrids(np.linspace(0, max_value_full_ring, data_len), labels=ring_labels, angle=0, fontsize=14, fontweight='bold', color='white', verticalalignment='center')
-        
-            for i in range(data_len):
-                ax_polar.barh(i, values[i] * 1.5 * np.pi / max_value_full_ring, color=ring_colours[i % len(ring_colours)])
-        
-            ax_polar.grid(False)
-            ax_polar.tick_params(axis='both', left=False, bottom=False, labelbottom=False, labelleft=True)
-            ax_polar.set_title(title, fontsize=14, color='white')
-            
-        def pie_plot(ax, title, keys, values):
-            wedges, texts, autotexts = ax.pie(values, labels=keys, autopct='%1.1f%%', startangle=140, colors=plt.cm.Paired(np.arange(len(keys))))
-            ax.set_title(title, fontsize=14)
-            for text in texts + autotexts:
-                text.set_fontsize(12)
 
         def text_plot(ax, titles_values):
             to_display = '\n'.join([f'{title} = {value:.2f}' for title, value in titles_values.items()])
@@ -306,9 +291,13 @@ class PortfolioMetrics():
             ax.set_xticks([])
             ax.set_yticks([])
 
+
+
+
         metrics = get_current_metrics_as_series(metrics)
         fig, axes = plt.subplots(7, 1, figsize=(25, 35))
-
+        
+        fig.set_facecolor('#f3f0ed')
 
         plot_instructions = {
             'position_values': [axes[0], 'Position Current Values', bar_plot],
@@ -329,25 +318,29 @@ class PortfolioMetrics():
         for metric in metrics.index:
             if metric not in plot_instructions.keys():
                 continue
-            
+            # Get metric value
             metric_value = metrics.at[metric]
             
+            # If value is dict, sort it
             if isinstance(metric_value, Dict):
                 metric_value = dict(sorted(metric_value.items(), key=lambda x: x[1]))
-
+                
+            # If metric is average cost per share: sort dict based on metric position_values
             if metric == 'position_cost_average':
                 sorting = dict(sorted(metrics.at['position_values'].items(), key=lambda x: x[1]))
                 metric_value = dict(sorted(metric_value.items(), key=lambda item: sorting[item[0]]))
-                
+                # Get positions current prices to plot them to compare with the average cost per share
                 current_prices = {ticker: Ticker(ticker).get_closing_price(datetime.now()) for ticker in list(metric_value.keys())}
                 current_prices = {key: (value if value is not None else 0) for key, value in current_prices.items()}
                 current_prices = dict(sorted(current_prices.items(), key=lambda item: sorting[item[0]]))
-                
+                # Make stacked plot
                 stacked_bars_plot(plot_instructions[metric][0], plot_instructions[metric][1], list(metric_value.keys()), list(metric_value.values()), list(current_prices.values()))
-
+                
+            # If its just text to plot, save the metric value for now
             elif metric in single_text_plot:
                 to_text_plot[plot_instructions[metric][1]] = metric_value
-            
+                
+            # Else plot following plot_instructions
             else:
                 plot_instructions[metric][2](
                     ax=plot_instructions[metric][0],
@@ -355,11 +348,88 @@ class PortfolioMetrics():
                     keys=list(metric_value.keys()),
                     values=list(metric_value.values())
                 )
-
+                
+        # Plot the text metrics at the end
         text_plot(axes[6], to_text_plot)
         
-        fig.subplots_adjust(hspace=0.5, top=0.95, bottom=0.05, left=0.05, right=0.95)  # Customize these values as needed
+        # Adjust space between subplots
+        fig.subplots_adjust(hspace=1, top=0.95, bottom=0.05, left=0.05, right=0.95)  # Customize these values as needed
 
-        plt.savefig('enhanced_metrics_plot.png')
+        # Create the directory if it does not exist
+        directory_path = Path(os.path.join(results_path, 'metrics'))
+        directory_path.mkdir(parents=True, exist_ok=True)
+        # Define the file path
+        file_path = directory_path / 'metrics_plot.png'
+        # Save the plot
+        plt.savefig(file_path)
 
-        plt.show()
+
+
+def plot_allocations(title, m_tags_df, tag_col_name='MAIN_TAGS', alloc_col_name='ALLOCATIONS'):
+    
+    
+    # Get key properties for colours and labels
+    max_value_full_ring = max(m_tags_df[alloc_col_name])
+
+    ring_colours = ['#2f4b7c', '#665191', '#a05195','#d45087', '#f95d6a','#ff7c43','#ffa600']
+
+    ring_labels = [f'   {x} ({v*100:.2f}%) ' for x, v in zip(list(m_tags_df[tag_col_name]), 
+                                                     list(m_tags_df[alloc_col_name]))]
+    
+    range_data_len = range(len(m_tags_df))
+
+    # Begin creating the figure
+    fig = plt.figure(figsize=(10,10), linewidth=10,
+                     edgecolor='#959399', 
+                     facecolor='#150f21')
+
+    rect = [0.1,0.1,0.8,0.8]
+
+    # Add axis for radial backgrounds
+    ax_polar_bg = fig.add_axes(rect, polar=True, frameon=False)
+    ax_polar_bg.set_theta_zero_location('N')
+    ax_polar_bg.set_theta_direction(1)
+
+    # Loop through each entry in the dataframe and plot a grey
+    # ring to create the background for each one
+    for i in range_data_len:
+        ax_polar_bg.barh(i, max_value_full_ring*1.5*np.pi/max_value_full_ring, 
+                         color='grey', 
+                         alpha=0.1)
+    # Hide all axis items
+    ax_polar_bg.axis('off')
+
+    # Add axis for radial chart for each entry in the dataframe
+    ax_polar = fig.add_axes(rect, polar=True, frameon=False)
+    ax_polar.set_theta_zero_location('N')
+    ax_polar.set_theta_direction(1)
+    ax_polar.set_rgrids(range_data_len, 
+                        labels=ring_labels, 
+                        angle=0, 
+                        fontsize=12, fontweight='bold',
+                        color='white', verticalalignment='center')
+
+    # Loop through each entry in the dataframe and create a coloured ring 
+    color_i = 0
+    for i in range_data_len:
+        color_i = 0 if color_i + 1 >= len(ring_colours) else color_i + 1
+        ax_polar.barh(i, list(m_tags_df[alloc_col_name])[i]*1.5*np.pi/max_value_full_ring, 
+                      color=ring_colours[color_i])
+
+    # Hide all grid elements 
+    ax_polar.grid(False)
+    ax_polar.tick_params(axis='both', left=False, bottom=False, 
+                         labelbottom=False, labelleft=True)
+    
+    plt.tight_layout()
+    
+    # Create allocations directory if it does not exist
+    directory_path = Path(os.path.join(results_path, 'allocations'))
+    directory_path.mkdir(parents=True, exist_ok=True)
+    title = title + '.png'
+    # Define the file path
+    file_path = os.path.join(results_path, 'allocations', title)
+    # Save the plot
+    plt.savefig(file_path)
+
+        

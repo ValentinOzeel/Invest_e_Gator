@@ -1,12 +1,13 @@
 from datetime import datetime
 from typing import Dict, List, Union
 import pandas as pd
+import numpy as np
 
 from Invest_e_Gator.src.secondary_modules.pydantic_valids import validate_load_csv, validate_tags_dict
 from Invest_e_Gator.src.secondary_modules.currency_conversion import currency_conversion
 from Invest_e_Gator.src.transactions import Transaction
 from Invest_e_Gator.src.ticker import Ticker
-from Invest_e_Gator.src.portfolio_metrics import PortfolioMetrics
+from Invest_e_Gator.src.portfolio_metrics import PortfolioMetrics, plot_allocations
 
 class Portfolio:
     def __init__(self, 
@@ -117,92 +118,83 @@ class Portfolio:
     
 
     
-    def tags_allocation(self, ticker_tags:Dict[str:Dict], alloc_tags:Dict, alloc_subtags:Dict[str:Dict]):
-        def stacked_radial_chart_plot(ax, title: str, data: Dict[str, Dict[str, float]]):
-            main_tags = list(data.keys())
-            main_tag_values = [data[tag]['value'] for tag in main_tags]
-            subtags = {tag: {k: v for k, v in data[tag].items() if k != 'value'} for tag in main_tags}
-
-            max_value_full_ring = max(main_tag_values)
-            ring_colours = ['#2f4b7c', '#665191', '#a05195', '#d45087', '#f95d6a', '#ff7c43', '#ffa600']
-            data_len = len(main_tags)
-
-            # Ensure the radial chart fits within the subplot's dimensions
-            rect = ax.get_position()
-            ax_polar_bg = plt.subplot(projection='polar', position=[rect.x0, rect.y0, rect.width, rect.height])
-            ax_polar_bg.set_theta_zero_location('N')
-            ax_polar_bg.set_theta_direction(1)
-
-            # Plot background grey bars
-            for i in range(data_len):
-                ax_polar_bg.barh(i, max_value_full_ring * 1.5 * np.pi / max_value_full_ring, color='grey', alpha=0.1)
-            ax_polar_bg.axis('off')
-
-            ax_polar = plt.subplot(projection='polar', position=[rect.x0, rect.y0, rect.width, rect.height])
-            ax_polar.set_theta_zero_location('N')
-            ax_polar.set_theta_direction(1)
-
-            # Plot data bars with stacked sub-bars
-            for i, main_tag in enumerate(main_tags):
-                start_angle = 0
-                for j, (subtag, subvalue) in enumerate(subtags[main_tag].items()):
-                    bar = ax_polar.barh(i, subvalue * 1.5 * np.pi / max_value_full_ring, left=start_angle, color=ring_colours[j % len(ring_colours)])
-                    start_angle += subvalue * 1.5 * np.pi / max_value_full_ring
-
-                    # Annotate subtags
-                    angle = (start_angle - subvalue * 1.5 * np.pi / (2 * max_value_full_ring))
-                    ax_polar.text(angle, i, subtag, ha='center', va='center', fontsize=8, color='black')
-
-            # Annotate main tags on the radial chart
-            for i, main_tag in enumerate(main_tags):
-                angle = i * (2 * np.pi / data_len)
-                ax_polar.text(angle, max_value_full_ring + 0.1, main_tag, ha='center', va='center', fontsize=10, color='black')
-
-            ax_polar.grid(False)
-            ax_polar.tick_params(axis='both', left=False, bottom=False, labelbottom=False, labelleft=False)
-            ax_polar.set_title(title, fontsize=14, color='black', loc='center', pad=20)
-
+    def tags_allocation(self, ticker_tags:Dict[str,Dict], alloc_tags:Dict, other_tags:Dict[str,Dict]=None):
         '''
-        alloc_tags ahould bew as {
+        alloc_tags ahould be as {
                                     'main_tag_1': {
-                                                'weight': 0.3, 'subtags': {'subtag_1': weight, 'subtag_2': weight, ...}
+                                                'weight': 0.3, 
+                                                'subtags': {
+                                                    'subtag_1': weight, 
+                                                    'subtag_2': weight, 
+                                                    ...
+                                                    }
                                                 }
                                     ...
                                 }
         '''
-        if sum(alloc_tags.values()) > 1:
-            raise ValueError('The sum of alloc_tags values should be <= 1.')
+        
+        if not ticker_tags or not alloc_tags:
+            return
         
         cv_per_tag = {}         
-        tags_actual_alloc = sum(self.current_value.values())
-        
         
         # GET CURRENT VALUES
-        total_value_pf = self.metrics['total_pl']
+        total_value_pf = self.current_metrics['total_value']
         position_values = self.current_metrics['position_values']
         
         # Calculate actual allocations per tag
         for ticker, tags in ticker_tags.items():
             
             for main_tag, mt_dict in tags.items():
-                cv_per_tag[main_tag] = {'value': (cv_per_tag.get(main_tag, 0) + mt_dict['weight'] * position_values[ticker]) / total_value_pf}
                 
+                cv_per_tag[main_tag] = {'value': (cv_per_tag.get(main_tag, {}).get('value', 0) + mt_dict['weight'] * position_values[ticker]) / total_value_pf, 
+                                        'subtags': {}}
+
                 for subtag, weight in mt_dict['subtags'].items():
-                   cv_per_tag[main_tag][subtag] = (cv_per_tag.get(subtag, 0) + weight * position_values[ticker]) / total_value_pf
-        # Store the results
-        self.tags_actual_alloc = tags_actual_alloc
-    
-    # self.tags_actual_alloc
-       # {'maintag_1': {'value': 0.25, 
-       #                'subtag_1': 0.3, 
-       #                'subtag2':0.7},
-       #  
-       #  'maintag_2': ['value': 0.75]
-       #  }
+                   cv_per_tag[main_tag]['subtags'][subtag] = (cv_per_tag.get(main_tag, {}).get('subtags', {}).get(subtag, 0) + weight * position_values[ticker]) / total_value_pf
+                    
         
+        main_tags = list(cv_per_tag.keys())
+        # Extracting main tags and their values
+        main_tags_df = pd.DataFrame.from_dict(
+            {
+                'MAIN_TAGS' : main_tags, 
+                'ALLOCATIONS': [cv_per_tag[tag]['value'] for tag in main_tags]
+                }
+            ).sort_values(by='ALLOCATIONS')
+        
+        plot_allocations(f"main_tags_allocations", main_tags_df)
+        
+        # Extracting sub tags and their values
+        sub_tags_dict = {}
+        
+        for main_tag in main_tags:
+            sub_tags_dict[main_tag] = {'subtags':[], 'allocations': []}
+            for sub_tag in cv_per_tag[main_tag]['subtags'].keys():
+                sub_tags_dict[main_tag]['subtags'].append(sub_tag)
+                sub_tags_dict[main_tag]['allocations'].append(cv_per_tag[main_tag]['subtags'][sub_tag])
+
+            sub_tags_df = pd.DataFrame.from_dict(
+            {
+                'SUB_TAGS' : sub_tags_dict[main_tag]['subtags'], 
+                'ALLOCATIONS': sub_tags_dict[main_tag]['allocations']
+                }
+            )
+        
+        
+            plot_allocations(str(main_tag), sub_tags_df, tag_col_name='SUB_TAGS')
+        
+        
+
+
+    
+    
+    
+    
     def compute_portfolio_metrics(self, 
                                   #start_date:datetime=None, end_date:datetime=None, 
-                                  today:bool=True, plot_current:bool=True):
+                                  today:bool=True, plot_current:bool=True,
+                                  ticker_tags=None, alloc_tags=None):
         
         pf_metrics = PortfolioMetrics(self.transactions_df, self.base_currency, 
                                       #start_date=start_date, end_date=end_date, 
@@ -211,12 +203,15 @@ class Portfolio:
         self.metrics = pf_metrics.compute_metrics()
         # Identify the closest key to today's date
         today = pd.Timestamp.now()
-        closest_date = self.metrics.index[np.abs(self.metrics.index - today).argmin()]
+        self.closest_date = self.metrics.index[np.abs(self.metrics.index - today).argmin()]
         # Access the element at column 'pl_value' for the identified closest date
-        self.current_metrics = self.metrics.loc[closest_date,:]
+        self.current_metrics = self.metrics.loc[self.closest_date]
+        
         
         if plot_current:
             pf_metrics._plot_current_metrics(self.metrics)
+            self.tags_allocation(ticker_tags, alloc_tags)
+            
         return self.metrics
 
 
@@ -246,8 +241,67 @@ if __name__ == "__main__":
                                          degiro=True)
 #
 
+    alloc_tags = {
+                    'AI': {
+                                'weight': 0.4, 'subtags': {'SOFTWARE': 0.7, 'INFRA': 0.3}
+                                },
+                    'ENERGY': {
+                                'weight': 0.13, 'subtags': {'BATTERY': 0.7, 'SOLAR': 0.3}
+                                }
+                }
 
-    metrics = portfolio.compute_portfolio_metrics(today=True)
+    ticker_tags =  {
+                     'pltr': {
+                                'AI': {
+                                        'weight': 0.7, 'subtags': {'SOFTWARE':0.8, 'INFRA': 0.2}
+                                       }
+                                },
+                     'enph': {
+                                'ENERGY': {
+                                        'weight': 0.7, 'subtags': {'SOLAR':0.8, 'INVERTOR':0.2}
+                                       }
+                                },
+                     'nee': {
+                                'ENERGY': {
+                                        'weight': 0.7, 'subtags': {'SOLAR':1}
+                                       }
+                                },
+                     'nvda': {
+                                'BLABLA': {
+                                        'weight': 0.7, 'subtags': {'BUBU':1}
+                                       }
+                                },
+                     'asml': {
+                                'BIBIBI': {
+                                        'weight': 0.7, 'subtags': {'SOLAR':1}
+                                       }
+                                },
+                     'ionq': {
+                                'QUANTUM': {
+                                        'weight': 0.7, 'subtags': {'SOLAR':1}
+                                       }
+                                },
+                     'crwd': {
+                                'CYBERSEC': {
+                                        'weight': 0.7, 'subtags': {'SOLAR':1}
+                                       }
+                                },
+                     'tsla': {
+                                'ROBOTS': {
+                                        'weight': 0.7, 'subtags': {'SOLAR':1}
+                                       }
+                                },
+                     'dna': {
+                                'SYNBIO': {
+                                        'weight': 0.7, 'subtags': {'SOLAR':1}
+                                       }
+                                },
+                    }
+    
+    metrics = portfolio.compute_portfolio_metrics(today=True, ticker_tags=ticker_tags, alloc_tags=alloc_tags)
+    
+
+            
 
     print(metrics)
     

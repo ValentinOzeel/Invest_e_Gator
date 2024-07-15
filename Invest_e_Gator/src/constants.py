@@ -142,3 +142,11 @@ yfinance_history_interval_period_choices = {
     'interval': ['1m', '2m', '5m', '15m', '30m', '60m', '90m', '1h', '1d', '5d', '1wk', '1mo', '3mo'],
     'period': ['1d', '5d', '1mo', '3mo', '6mo', '1y', '2y', '5y', '10y', 'ytd', 'max', None],
 }
+
+
+import os
+from pathlib import Path
+# Assuming we are in Invest_e_Gator\src\constants.py
+root_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+results_path = os.path.join(root_path, 'results')
+
