@@ -2,7 +2,7 @@ from typing import List, Dict
 import pandas as pd
 import copy
 
-from ticker import Ticker
+from Invest_e_Gator.src.ticker import Ticker
 
 class PurchaseOptimizer():
     def __init__(self, budget:int, ticker_priority_order:List, allocations:Dict, prices:dict=None, mode:str='rounds'):

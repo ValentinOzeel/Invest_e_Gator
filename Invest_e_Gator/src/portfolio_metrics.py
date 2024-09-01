@@ -426,10 +426,9 @@ def plot_allocations(title, m_tags_df, tag_col_name='MAIN_TAGS', alloc_col_name=
     # Create allocations directory if it does not exist
     directory_path = Path(os.path.join(results_path, 'allocations'))
     directory_path.mkdir(parents=True, exist_ok=True)
-    title = title + '.png'
     # Define the file path
     file_path = os.path.join(results_path, 'allocations', title)
     # Save the plot
-    plt.savefig(file_path)
+    plt.savefig(file_path, format='png')
 
         
