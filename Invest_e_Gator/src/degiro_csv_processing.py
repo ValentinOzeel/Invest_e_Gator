@@ -1,8 +1,10 @@
 import os
-from typing import List, Tuple
+from typing import List, Tuple, Union
 
 import pandas as pd
 import numpy as np
+import sqlite3
+from contextlib import contextmanager
 
 import finnhub
 from ratelimit import limits, sleep_and_retry
@@ -11,55 +13,71 @@ import time
 from dotenv import load_dotenv
 load_dotenv()  # Load environment variables from .env file
 
+# Assuming we are in src\degiro_csv_processing.py
+ROOT_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+SQLITE_DATABASE_PATH = os.path.join(ROOT_PATH, 'conf', 'sqlite', 'data_sqlite.db')
+
+
+
+
+
+class SQLiteManagment:
+    '''SQLite DATABASE MANAGEMENT'''
+
+    @staticmethod
+    @contextmanager
+    def get_db_connection():
+        """Get a connection to the SQLite database and close it when context ends (after user action)."""
+        conn = sqlite3.connect(SQLITE_DATABASE_PATH)
+        try:
+            yield conn
+        finally:
+            conn.close()
+
+    @staticmethod
+    def store_dataframe_in_sqlite(user_id, df, table_name):
+        # Add a user_id column to the DataFrame
+        df['user_id'] = user_id
+
+        with SQLiteManagment.get_db_connection() as conn:
+            # Store the DataFrame in the SQLite database table
+            df.to_sql(table_name, conn, if_exists='replace', index=False)
+
+    @staticmethod
+    def retrieve_dataframe_from_sqlite(user_id, table_name):
+        try:
+            with SQLiteManagment.get_db_connection() as conn:
+                # Query the database and retrieve the table as a DataFrame
+                query = f"SELECT * FROM {table_name} WHERE user_id = ?"
+                df = pd.read_sql_query(query, conn, params=(user_id,))
+                return df if not df.empty else pd.DataFrame()  # Return empty DataFrame instead of None
+        except Exception as e:
+            print(f'Error retrieving dataframe from db for user {user_id} and table {table_name}: {e}')
+            return pd.DataFrame()  # Return empty DataFrame instead of None
+
+        
+        
 class CSVMerger:
-    def __init__(self, path_folder_csv_transactions, name_pf):
-        self.path_folder_csv_transactions  = path_folder_csv_transactions
-        self.name_pf = name_pf
-        
-        os.makedirs(os.path.join(self.path_folder_csv_transactions, 'persisted_data'), exist_ok=True)
-        self.path_processed_files = os.path.join(self.path_folder_csv_transactions, 'persisted_data', "processed_files.txt")
-        self.path_all_transactions = os.path.join(self.path_folder_csv_transactions, 'persisted_data', "all_transactions.csv")
+    def __init__(self, user_id, pf_paths:Union[str, List[str]], pf_name:str):
+        self.user_id = user_id
+        self.pf_paths  = pf_paths
+        self.pf_name = pf_name
             
-        self.processed_files = []
-        self.all_transactions = pd.DataFrame()
-        
-        self._retrieve_existing_calcs()
-
-
-    def _retrieve_existing_calcs(self):
-        # check if a file tracking processed files exists
-        if os.path.exists(self.path_processed_files):
-            # if it does, read the names of the processed files from it
-            with open(self.path_processed_files, 'r') as f:
-                self.processed_files = f.read().splitlines()
- 
-        # check if the all_transactions.csv file already exists
-        if os.path.exists(self.path_all_transactions):
-            # if it does, read the existing data into the all_transactions DataFrame
-            self.all_transactions = pd.read_csv(self.path_all_transactions)       
-
+        self.all_transactions = SQLiteManagment.retrieve_dataframe_from_sqlite(self.user_id, table_name=self.pf_name)
+        self.process_files()
+        self.write_to_sqlite()
 
     def process_files(self): 
-        # os.scandir() function to iterate over the files in directory transactions
-        # then use the os.stat() function to get the file's creation time, which you can use to sort the files by date of creation
-        transac_files = [(f.name, f.stat().st_ctime) for f in os.scandir(self.path_folder_csv_transactions) if f.is_file()]
-        # Sort by creation time
-        transac_files.sort(key=lambda x: x[1])
-        # List of file names sorted by creation date
-        file_names = [file[0] for file in transac_files]
-
         # iterate over the files in the specified directory
-        for file in file_names:
+        for file_path in self.pf_paths:
             # check if the file is a CSV and if it has not been processed before
-            if file.endswith('.csv') and file not in self.processed_files:
+            if file_path.endswith('.csv'):
                 # read the CSV file into a DataFrame
-                df = pd.read_csv(os.path.join(self.path_folder_csv_transactions, file))
+                df = pd.read_csv(file_path)
                 #Reverse rows (transactions) order + reset index
                 df = df.loc[::-1].reset_index(drop=True)
                 # drop rows that have no date, romve some bugs in data export of degiro
-                df = df.dropna(subset=['Date'])
-                # append the file name to the processed_files list
-                self.processed_files.append(''.join([self.name_pf, '_', file]))          
+                df = df.dropna(subset=['Date'])       
                 # append the data from the CSV file to the all_transactions DataFrame
                 self.all_transactions = pd.concat([self.all_transactions, df], ignore_index=True)
                 # Necessary drop duplicates (some lines with NaN value are not droped with classical .drop_duplicates() when we retrieve preexisting data)
@@ -67,31 +85,35 @@ class CSVMerger:
                 column_indices = [0, 1, 2, 3, 14, 16, 18]
                 self.all_transactions = self.all_transactions.drop_duplicates(subset=self.all_transactions.columns[column_indices], keep='first')
 
-    def write_to_csv(self):
-        # write the combined data to a new CSV file
-        self.all_transactions.to_csv(self.path_all_transactions, index=False)
-        # write the names of the processed files to a file
-        with open(self.path_processed_files, 'w') as f:
-            for file in self.processed_files:
-                f.write("%s\n" % file)
-                
-                
-    def get_data(self) :
-        return(self.all_transactions)
+    def write_to_sqlite(self):
+        # Store the DataFrame in the SQLite database table
+        SQLiteManagment.store_dataframe_in_sqlite(self.user_id, self.all_transactions, table_name=self.pf_name)
+
+
      
          
 
                
 class DataProcess:
     
-    def __init__(self, df:pd.DataFrame, 
-                       mapper_file_path:str,
-                       output_folder_path:str):
+    def __init__(self, 
+                 user_id:str,
+                 df:pd.DataFrame, 
+                 mapper_df:pd.DataFrame,
+                 pf_name:str
+                 ):
+        
+        self.user_id = user_id
         self.df = df
-        self.mapper_file_path = mapper_file_path
-        self.output_folder_path = output_folder_path
+        self.mapper_df = mapper_df
+        self.pf_name = pf_name
         
         self.degiro_Date_Hour_format = '%d-%m-%Y %H:%M'
+        
+        # Clean the dataframe (add columns names, drop duplicates etc)
+        self.process_data()
+        # Write final transaction files cleaned
+        self.write_to_sqlite()
   
     def _check_tickersymbol_column(self):
         # Access rows without value in the 'Ticker Symbol' column
@@ -150,17 +172,15 @@ class DataProcess:
     def _add_ticker_symbol(self):
         try:
             # Open csv and remove duplicates
-            df_map = pd.read_csv(self.mapper_file_path)  
-            df_map = df_map.drop_duplicates()        
-            df_map = df_map.drop_duplicates(subset="ISIN_code")
+            self.mapper_df = self.mapper_df.drop_duplicates()        
+            self.mapper_df = self.mapper_df.drop_duplicates(subset="ISIN_code")
             
             # Map 'Ticker Symbol' values (present in file ticker_list) in self.df according to 'Product' 
-            self.df["Ticker_symbol"] = self.df["ISIN_code"].map(df_map.set_index("ISIN_code")["Ticker_symbol"])
-            self.df["Product_type"] = self.df["ISIN_code"].map(df_map.set_index("ISIN_code")["Product_type"])   
+            self.df["Ticker_symbol"] = self.df["ISIN_code"].map(self.mapper_df.set_index("ISIN_code")["Ticker_symbol"])
+            self.df["Product_type"] = self.df["ISIN_code"].map(self.mapper_df.set_index("ISIN_code")["Product_type"])   
             
         except Exception as e:
             print(f'{e}')
-            #print(f'No mapper csv file (isin/ticker mapper) at the provided path : {self.mapper_file_path}. Fallback to _get_ticker_symbol_from_isin method to retrieve ticker symbols.')
             # Fallback to this method to get ticker symbols
             #self._get_ticker_symbol_from_isin_via_finnhub()
 
@@ -177,12 +197,13 @@ class DataProcess:
     
 
 
-    def process_data (self):
+    def process_data(self):
+
         # Perform data cleaning and manipulation with the row appended csv file
         #Check if columns are in english 
         column_names = ['Date', 'Hour', 'Product', 'ISIN_code', 'Exchange', 'Venue', 'Quantity', 
                         'Share_price', 'Currency_SP', 'Total_price', 'Currency_TP', 'Total_price_in_my_currency', 
-                        'Currency_TPIMC', 'Change_rate', 'Fee', 'Currency_fee', 'Total_paid', 'Currency_paid', 'ID_order']
+                        'Currency_TPIMC', 'Change_rate', 'Fee', 'Currency_fee', 'Total_paid', 'Currency_paid', 'ID_order', 'user_id']
         # if number columns = number elements in column_names 
         if len(self.df.axes[1]) == len(column_names) :
             #Change column names of the dataframe if df's column names != column_names
@@ -190,7 +211,7 @@ class DataProcess:
             if not result:
                 self.df.rename(columns=dict(zip(self.df.columns, column_names)), inplace=True) 
         else:
-            raise ValueError("There should be 19 columns in the df.")      
+            raise ValueError(f"There should be 20 columns in the df. We got:\n{self.df.columns}")      
             
         # remove rows without date
         self.df.dropna(subset = ['Date'], inplace= True)
@@ -201,19 +222,16 @@ class DataProcess:
         # Combine 'date' and 'hour' columns and convert to datetime
         self.df['Datetime'] = pd.to_datetime(self.df['Date'] + ' ' + self.df['Hour'], format=self.degiro_Date_Hour_format)
         self.df = self.df.drop(columns=['Date', 'Hour'])
-        # Convert the datetime to the desired format (american datetime) as string
-        self.df['Datetime'] = self.df['Datetime'].dt.strftime('%m-%d-%Y %H:%M:%S')
+        ## Convert the datetime to the desired format (american datetime) as string
+        self.df['Datetime'] = self.df['Datetime'].dt.strftime('%Y-%m-%d %H:%M:%S')
         # add detail about transaction: 'real' = deliberate transaction, 'non_real' = transaction due to stok split, reverse split etc...
         self.df['Transaction_action'] = self.df['ID_order'].apply(lambda x: 'real' if isinstance(x, str) and x else 'non_real')
         # Based on the mapper file or morningstar wrapper, add ticker
         self._add_ticker_symbol()
 
-    def write_to_csv(self):
-        # Create path if it doesn't exist
-        if not os.path.exists(self.output_folder_path): 
-            os.makedirs(self.output_folder_path)
-        # write data to a new CSV file
-        self.df.to_csv(os.path.join(self.output_folder_path, 'cleaned_transactions.csv'), index=False)
+    def write_to_sqlite(self):
+        # Store the DataFrame in the SQLite database table
+        SQLiteManagment.store_dataframe_in_sqlite(self.user_id, self.df, table_name=self.pf_name)
         
     def get_processed_df(self):
         return(self.df)
@@ -221,87 +239,60 @@ class DataProcess:
     
     
     
-    
-    
-    
-    
-    
-    
-    
-    
 class DegiroCsvProcess:
-    def __init__(self, mapper_file_path:str=None):
-        # Access the Parent 'Portfolio' folder
-        self.Invest_e_Gator_path = os.path.abspath(os.path.join(__file__ , "../.."))
-        self.degiro_transactions_path = os.path.join(self.Invest_e_Gator_path, 'data', 'degiro_transactions')
-        # Get folder names in self.degiro_transactions_path (i.e the different portfolios)
-        self.pf_names = [pf for pf in os.listdir(self.degiro_transactions_path) if os.path.isdir(os.path.join(self.degiro_transactions_path, pf))]
-    
-        self.mapper_file_path = mapper_file_path if mapper_file_path and os.path.isfile(mapper_file_path) else os.path.join(self.degiro_transactions_path, 'mapper_file.csv')    
+    def __init__(self, user_id:str, pf_name:str, degiro_csv_paths:Union[str, List[str]], mapper_file_path:str):
+        self.user_id = user_id
+        self.pf_name = pf_name
+        self.sqlite_path = f'Invest_e_Gator\conf\sqlite\{user_id}.db'
         
-        self.transaction_dfs = {}
-        self.processed_dfs = {}
+        self.degiro_csv_paths = degiro_csv_paths if isinstance(degiro_csv_paths, List) else [degiro_csv_paths]
+        self.mapper_file_path = mapper_file_path  
         
-    def process_and_clean(self, pfs:List[str]=None):
-        pf_names = self.pf_names if not pfs else pfs 
+        self.all_transactions_df = pd.DataFrame()
         
-        for pf_name in pf_names:
-            self.run_csv_processing(pf_name)
-            self.run_data_cleaning(pf_name)
+    def process_and_clean(self):
+        self.run_csv_processing()
+        self.run_data_cleaning()
         
-    def run_csv_processing(self, pf_name:str):         
-        csv_process = CSVMerger(os.path.join(self.degiro_transactions_path, pf_name, 'transactions'), pf_name)
-        csv_process.process_files()
-        csv_process.write_to_csv()
-        self.transaction_dfs[pf_name] = csv_process.get_data()   
+    def run_csv_processing(self):      
+        sqlite_table_name = '_'.join([self.pf_name, 'all_transactions'])   
+        CSVMerger(self.user_id, self.degiro_csv_paths, sqlite_table_name)
+        self.all_transactions_df = SQLiteManagment.retrieve_dataframe_from_sqlite(self.user_id, sqlite_table_name)
         
-    def run_data_cleaning(self, pf_name:str):
-        transactions_df = self.transaction_dfs[pf_name]
+    def run_data_cleaning(self):
         # Init DataProcess object
-        cl = DataProcess(transactions_df, 
-                        self.mapper_file_path,
-                        os.path.join(self.degiro_transactions_path, pf_name, 'cleaned_transactions'))
-        # Clean the dataframe (add columns names, drop duplicates etc)
-        cl.process_data()
-        # Write final transaction files cleaned
-        cl.write_to_csv()
-        self.processed_dfs[pf_name] = cl.get_processed_df()
- 
-    
-    
-    def fuse_pfs(self, pfs_names:List[str], name_fused_pf:str, save:bool=True):
-        if len(pfs_names) < 2:
-            raise ValueError("pfs_names arg should be a list containing at least two portfolio names as str type.")
-        
-        if any([self.processed_dfs.get(pf_name, pd.DataFrame()).empty for pf_name in pfs_names]):
-            raise ValueError("All portfolio names provided should be processed first.")
-        
-        fused_df = self.processed_dfs[pfs_names[0]]
+        DataProcess(
+            self.user_id,
+            self.all_transactions_df, 
+            pd.read_csv(self.mapper_file_path),
+            '_'.join([self.pf_name, 'cleaned_transactions'])
+        )
 
-        for pf_name in pfs_names[1:]:
-            fused_df = pd.concat([fused_df, self.processed_dfs[pf_name]])
+    def get_cleaned_transactions(self):
+        # Retrieve the portfolio from the sqlite database
+        clean_df = SQLiteManagment.retrieve_dataframe_from_sqlite(self.user_id, '_'.join([self.pf_name, 'cleaned_transactions']))
+        # Sort by datetime
+        clean_df['Datetime'] = pd.to_datetime(clean_df['Datetime'], format='%Y-%m-%d %H:%M:%S')
+
+        return clean_df.sort_values(by='Datetime')
+
         
-        fused_df['Datetime'] = pd.to_datetime(fused_df['Datetime'], format='%m-%d-%Y %H:%M:%S')
-        fused_df = fused_df.sort_values(by='Datetime')
-        
-        if save:
-            self.fused_to_csv(fused_df, name_fused_pf)
-        
-    def fused_to_csv(self, df:pd.DataFrame, name_pf:str):
-        out_path = os.path.join(self.degiro_transactions_path, name_pf)
-        # Create path if it doesn't exist
-        if not os.path.exists(out_path): 
-            os.makedirs(out_path)
-            
-        # write data to a new CSV file
-        df.to_csv(os.path.join(out_path, 'cleaned_transactions.csv'), index=False)
+
 
 if __name__ == "__main__":
 
-    degiro_process = DegiroCsvProcess(mapper_file_path=r'C:\Users\V.ozeel\Documents\Perso\Coding\Python\Projects\Finances\Invest_e_Gator\Invest_e_Gator\data\degiro_transactions\mapper_file.csv')
-    degiro_process.process_and_clean(pfs=['Val', 'Lola'])
-    degiro_process.fuse_pfs(pfs_names=['Val', 'Lola'], name_fused_pf='Valola')
-    
+    degiro_process = DegiroCsvProcess(
+        user_id='Valola',
+        pf_name='Valola',
+        degiro_csv_paths=[
+            r'C:\Users\V.ozeel\Documents\Perso\Coding\Python\Projects\Finances\Invest_e_Gator\Invest_e_Gator\data\degiro_transactions\Val\transactions\07-09-2024.csv',
+            r'C:\Users\V.ozeel\Documents\Perso\Coding\Python\Projects\Finances\Invest_e_Gator\Invest_e_Gator\data\degiro_transactions\Lola\transactions\07-09-2024.csv'
+        ],
+        mapper_file_path=r'C:\Users\V.ozeel\Documents\Perso\Coding\Python\Projects\Finances\Invest_e_Gator\Invest_e_Gator\data\degiro_transactions\mapper_file.csv'
+        )
+    degiro_process.process_and_clean()
+    df = degiro_process.get_cleaned_transactions()
+    print(df)
     
 
     

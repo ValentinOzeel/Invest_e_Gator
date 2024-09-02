@@ -75,10 +75,8 @@ class Portfolio:
         # Read csv
         transactions_df = pd.read_csv(file_path, parse_dates=['date_hour']) if not degiro else self._load_degiro_transactions(file_path)
         
-        n_transactions = transactions_df.shape[0]
-        # Transaform rows as Transaction obj
-        for i, (_, row) in enumerate(transactions_df.iterrows()):
-            self.add_transaction(Transaction(
+        transactions = [
+            Transaction(
                 date_hour=pd.to_datetime(row['date_hour']),
                 transaction_type=row['transaction_type'],
                 ticker=row['ticker'],
@@ -87,11 +85,14 @@ class Portfolio:
                 share_currency=row['share_currency'],
                 transact_currency=row['transact_currency'],
                 fee=row['fee'],
-                transaction_action=row['transaction_action'] # 'real' (deliberate transaction) vs 'non_real' (stock split, reverse split etc...)
-                ), 
-                tags_dict
+                transaction_action=row['transaction_action']
             )
-            print(f'Loaded {i+1} / {n_transactions} transactions')
+            for _, row in transactions_df.iterrows()
+        ]
+
+        for i, transaction in enumerate(transactions):
+            self.add_transaction(transaction, tags_dict)
+            print(f'Loaded {i+1} / {len(transactions)} transactions')
 
         
     def _load_degiro_transactions(self, file_path: str):
