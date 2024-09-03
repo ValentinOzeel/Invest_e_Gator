@@ -1,4 +1,4 @@
-Product,ISIN_code,Ticker_symbol,Product_type
+product,ISIN_code,ticker_symbol,product_type
 3D Systems Corp,US88554D2053,DDD,Common Stock
 ABB LTD-SPON ADR,US0003752047,ABBNY,Common Stock
 Advanced Micro Devices Inc,US0079031078,AMD,Common Stock

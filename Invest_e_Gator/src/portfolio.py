@@ -8,11 +8,16 @@ from Invest_e_Gator.src.secondary_modules.currency_conversion import currency_co
 from Invest_e_Gator.src.transactions import Transaction
 from Invest_e_Gator.src.ticker import Ticker
 from Invest_e_Gator.src.portfolio_metrics import PortfolioMetrics, plot_allocations
+from Invest_e_Gator.src.degiro_csv_processing import SQLiteManagment
+
 
 class Portfolio:
     def __init__(self, 
+                 user_id:str,
                  #cash_position:Union[int, float], 
-                 base_currency: str = 'eur'):
+                 base_currency: str = 'usd'):
+        
+        self.user_id = user_id
         #self.cash_position = cash_position
         self.base_currency = base_currency.lower()
         self.transactions_df = pd.DataFrame()
@@ -29,15 +34,16 @@ class Portfolio:
         validate_tags_dict(tags_dict=tags_dict)
         
         # Validate ticker_symbol and get long name
-        ticker_obj = Ticker(ticker_name=transaction.ticker)
+        ticker_obj = Ticker(ticker_symbol=transaction.ticker_symbol)
         # Get ticker's full name
-        if not self.ticker_full_names.get(transaction.ticker):
+        if not self.ticker_full_names.get(transaction.ticker_symbol):
             ticker_long_name = ticker_obj.name 
-            self.ticker_full_names[transaction.ticker] = ticker_long_name
+            self.ticker_full_names[transaction.ticker_symbol] = ticker_long_name
         else:
-            ticker_long_name = self.ticker_full_names[transaction.ticker]
+            ticker_long_name = self.ticker_full_names[transaction.ticker_symbol]
+
         # Get potential tags  
-        ticker_tags = self._get_ticker_tags(transaction.ticker, tags_dict)
+        ticker_tags = self._get_ticker_tags(transaction.ticker_symbol, tags_dict)
         
         # Check if exepense currency == base currency, otherwise make conversion            
         transact_amount_base_currency = currency_conversion(
@@ -52,7 +58,7 @@ class Portfolio:
             'date_hour': transaction.date_hour,
             'transaction_type': transaction.transaction_type,
             'transaction_action': transaction.transaction_action,
-            'ticker': transaction.ticker,
+            'ticker_symbol': transaction.ticker_symbol,
             'name': ticker_long_name,
             'tags': ticker_tags,
             'n_shares': transaction.n_shares, # n shares sold or bought (positive number)
@@ -70,16 +76,19 @@ class Portfolio:
         
         self.transactions_df.sort_values(by='date_hour', ascending = True, inplace = True)
         
-    def load_transactions_from_csv(self, file_path: str, degiro:bool = True, tags_dict:Dict[str, List]=None):
-        validate_load_csv(file_path=file_path)
-        # Read csv
-        transactions_df = pd.read_csv(file_path, parse_dates=['date_hour']) if not degiro else self._load_degiro_transactions(file_path)
+    def load_transactions_from_sqlite(self, table_name:str, tags_dict:Dict[str, List]=None):
+
+        transactions_df = SQLiteManagment.retrieve_dataframe_from_sqlite(self.user_id, table_name)
+        
+        print(transactions_df)
+        print(transactions_df.columns)
+        
         
         transactions = [
             Transaction(
                 date_hour=pd.to_datetime(row['date_hour']),
                 transaction_type=row['transaction_type'],
-                ticker=row['ticker'],
+                ticker_symbol=row['ticker_symbol'],
                 n_shares=row['n_shares'],
                 share_price=row['share_price'],
                 share_currency=row['share_currency'],
@@ -93,30 +102,6 @@ class Portfolio:
         for i, transaction in enumerate(transactions):
             self.add_transaction(transaction, tags_dict)
             print(f'Loaded {i+1} / {len(transactions)} transactions')
-
-        
-    def _load_degiro_transactions(self, file_path: str):
-        df = pd.read_csv(file_path)
-        # Select some columns
-        df = df[['Datetime', 'Quantity', 'Ticker_symbol', 'Share_price', 'Currency_SP', 'Currency_TPIMC', 'Fee', 'transaction_action']]
-        # Get transaction_type and n_shares
-        df['transaction_type'] = df['Quantity'].apply(lambda x: 'buy' if x > 0 else 'sale')
-        df['n_shares'] = df['Quantity'].apply(lambda x: abs(x))
-        df = df.drop(columns=['Quantity'])
-        # Rename some columns
-        df = df.rename(columns={"Datetime": "date_hour", 
-                           "Ticker_symbol": "ticker",
-                           "Share_price": "share_price",
-                           "Currency_SP": "share_currency",
-                           "Currency_TPIMC": "transact_currency",
-                           "Fee": "fee",
-                           "Transaction_action": "transaction_action"
-                            }
-                  )
-        return df
-    
-    
-    
 
     
     def tags_allocation(self, ticker_tags:Dict[str,Dict], alloc_tags:Dict, other_tags:Dict[str,Dict]=None):
@@ -237,9 +222,8 @@ if __name__ == "__main__":
     
     
     
-    portfolio = Portfolio()
-    portfolio.load_transactions_from_csv(file_path=r'C:\Users\V.ozeel\Documents\Perso\Coding\Python\Projects\Finances\Invest_e_Gator\Invest_e_Gator\data\degiro_transactions\Valola\cleaned_transactions.csv',
-                                         degiro=True)
+    portfolio = Portfolio(user_id='Valola')
+    portfolio.load_transactions_from_sqlite(table_name='Valola_cleaned_transactions')
 #
 
     alloc_tags = {

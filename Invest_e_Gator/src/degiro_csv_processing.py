@@ -13,6 +13,9 @@ import time
 from dotenv import load_dotenv
 load_dotenv()  # Load environment variables from .env file
 
+
+from Invest_e_Gator.src.secondary_modules.pydantic_valids import validate_load_csv
+
 # Assuming we are in src\degiro_csv_processing.py
 ROOT_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 SQLITE_DATABASE_PATH = os.path.join(ROOT_PATH, 'conf', 'sqlite', 'data_sqlite.db')
@@ -50,10 +53,24 @@ class SQLiteManagment:
                 # Query the database and retrieve the table as a DataFrame
                 query = f"SELECT * FROM {table_name} WHERE user_id = ?"
                 df = pd.read_sql_query(query, conn, params=(user_id,))
-                return df if not df.empty else pd.DataFrame()  # Return empty DataFrame instead of None
+                # Remove the user_id column
+                df = df.drop(columns=['user_id']) if not df.empty else pd.DataFrame()
+                return df
         except Exception as e:
             print(f'Error retrieving dataframe from db for user {user_id} and table {table_name}: {e}')
             return pd.DataFrame()  # Return empty DataFrame instead of None
+
+    @staticmethod
+    def get_user_table_names(user_id):
+        """Return a list of all existing table names for the given user."""
+        try:
+            with SQLiteManagment.get_db_connection() as conn:
+                query = "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE ?"
+                tables = pd.read_sql_query(query, conn, params=(f'{user_id}_%',))
+                return tables['name'].tolist() if not tables.empty else []
+        except Exception as e:
+            print(f'Error retrieving table names for user {user_id}: {e}')
+            return []  # Return an empty list in case of error
 
         
         
@@ -117,7 +134,7 @@ class DataProcess:
   
     def _check_tickersymbol_column(self):
         # Access rows without value in the 'Ticker Symbol' column
-        rows_wo_tick = self.df[self.df['Ticker_symbol'].isna()]
+        rows_wo_tick = self.df[self.df['ticker_symbol'].isna()]
         # isin for which we didnt retrieve ticker symbol
         not_found_isin = rows_wo_tick['ISIN_code'].unique().tolist()
         
@@ -155,18 +172,18 @@ class DataProcess:
         
         if ISIN_codes:
             print(f'We will perform 60 API calls per minute to finnhub. Total calls to carry out: {len(ISIN_codes)}. ISIN to fetch: {ISIN_codes}')
-            ticker_key, type_key = 'ticker', 'type'
+            ticker_key, type_key = 'ticker_symbol', 'type'
             
             for isin in ISIN_codes:
                 ticker_symbol, product_type = finnhub_api_call_symbl_lookup(finnhub_c, isin)
                 ISIN_results[isin] = {ticker_key : ticker_symbol, type_key : product_type}
 
-            # Apply the function to the 'ISIN_code' column and create a new 'Ticker_symbol' and 'Product_type' column
-            self.df['Ticker_symbol'] = self.df.apply(lambda row: _add_ticker_symbol(row, ISIN_results, ticker_key)
-                                                     if row['ISIN_code'] in ISIN_codes else row['Ticker_symbol'], axis=1)
+            # Apply the function to the 'ISIN_code' column and create a new 'ticker_symbol' and 'product_type' column
+            self.df['ticker_symbol'] = self.df.apply(lambda row: _add_ticker_symbol(row, ISIN_results, ticker_key)
+                                                     if row['ISIN_code'] in ISIN_codes else row['ticker_symbol'], axis=1)
             
-            self.df['Product_type'] = self.df.apply(lambda row: _add_product_type(row, ISIN_results, type_key)
-                                                    if row['ISIN_code'] in ISIN_codes else row['Product_type'],axis=1)
+            self.df['product_type'] = self.df.apply(lambda row: _add_product_type(row, ISIN_results, type_key)
+                                                    if row['ISIN_code'] in ISIN_codes else row['product_type'],axis=1)
         
 
     def _add_ticker_symbol(self):
@@ -176,16 +193,16 @@ class DataProcess:
             self.mapper_df = self.mapper_df.drop_duplicates(subset="ISIN_code")
             
             # Map 'Ticker Symbol' values (present in file ticker_list) in self.df according to 'Product' 
-            self.df["Ticker_symbol"] = self.df["ISIN_code"].map(self.mapper_df.set_index("ISIN_code")["Ticker_symbol"])
-            self.df["Product_type"] = self.df["ISIN_code"].map(self.mapper_df.set_index("ISIN_code")["Product_type"])   
+            self.df['ticker_symbol'] = self.df["ISIN_code"].map(self.mapper_df.set_index("ISIN_code")['ticker_symbol'])
+            self.df['product_type'] = self.df["ISIN_code"].map(self.mapper_df.set_index("ISIN_code")['product_type'])   
             
         except Exception as e:
             print(f'{e}')
             # Fallback to this method to get ticker symbols
             #self._get_ticker_symbol_from_isin_via_finnhub()
 
-        if 'Ticker_symbol' in self.df.columns:
-            wo_ticker_symbol_value = self.df[self.df['Ticker_symbol'].isnull()]
+        if 'ticker_symbol' in self.df.columns:
+            wo_ticker_symbol_value = self.df[self.df['ticker_symbol'].isnull()]
             ISIN_codes = wo_ticker_symbol_value['ISIN_code'].unique().tolist()
         else:
             ISIN_codes = self.df['ISIN_code'].unique().tolist()
@@ -198,36 +215,47 @@ class DataProcess:
 
 
     def process_data(self):
+        # Define expected column names
+        expected_columns = [
+            'date', 'hour', 'product', 'ISIN_code', 'exchange', 'venue', 'quantity', 
+            'share_price', 'share_currency', 'total_price', 'currency_TP', 
+            'total_price_in_my_currency', 'transact_currency', 'change_rate', 
+            'fee', 'currency_fee', 'total_paid', 'currency_paid', 'ID_order'
+        ]
 
-        # Perform data cleaning and manipulation with the row appended csv file
-        #Check if columns are in english 
-        column_names = ['Date', 'Hour', 'Product', 'ISIN_code', 'Exchange', 'Venue', 'Quantity', 
-                        'Share_price', 'Currency_SP', 'Total_price', 'Currency_TP', 'Total_price_in_my_currency', 
-                        'Currency_TPIMC', 'Change_rate', 'Fee', 'Currency_fee', 'Total_paid', 'Currency_paid', 'ID_order', 'user_id']
-        # if number columns = number elements in column_names 
-        if len(self.df.axes[1]) == len(column_names) :
-            #Change column names of the dataframe if df's column names != column_names
-            result = all(col1 == col2 for col1, col2 in zip(self.df.columns, column_names))
-            if not result:
-                self.df.rename(columns=dict(zip(self.df.columns, column_names)), inplace=True) 
-        else:
-            raise ValueError(f"There should be 20 columns in the df. We got:\n{self.df.columns}")      
-            
-        # remove rows without date
-        self.df.dropna(subset = ['Date'], inplace= True)
-        # remove duplicate rows from the all_transactions DataFrame
-        self.df = self.df.drop_duplicates().reset_index(drop=True)
+        # Validate DataFrame structure
+        if self.df.shape[1] != len(expected_columns):
+            raise ValueError(f"There should be {len(expected_columns)} columns in the df. We got:\n{self.df.columns}")
+
+        # Rename columns if necessary
+        self.df.columns = expected_columns if not all(self.df.columns == expected_columns) else self.df.columns
+
+        # Data cleaning steps
+        self.df = self.df.dropna(subset=['date'])
+        self.df = self.df.drop_duplicates()
         # Drop row that contains 'NON TRADEABLE' in their product name
-        self.df = self.df[self.df["Product"].str.contains("NON TRADEABLE") == False]
-        # Combine 'date' and 'hour' columns and convert to datetime
-        self.df['Datetime'] = pd.to_datetime(self.df['Date'] + ' ' + self.df['Hour'], format=self.degiro_Date_Hour_format)
-        self.df = self.df.drop(columns=['Date', 'Hour'])
-        ## Convert the datetime to the desired format (american datetime) as string
-        self.df['Datetime'] = self.df['Datetime'].dt.strftime('%Y-%m-%d %H:%M:%S')
-        # add detail about transaction: 'real' = deliberate transaction, 'non_real' = transaction due to stok split, reverse split etc...
-        self.df['Transaction_action'] = self.df['ID_order'].apply(lambda x: 'real' if isinstance(x, str) and x else 'non_real')
-        # Based on the mapper file or morningstar wrapper, add ticker
+        self.df = self.df[~self.df["product"].str.contains("NON TRADEABLE", na=False)]
+
+        # Combine 'date' and 'hour' into a single 'date_hour' column
+        self.df['date_hour'] = pd.to_datetime(self.df['date'] + ' ' + self.df['hour'], format=self.degiro_Date_Hour_format)
+        self.df = self.df.drop(columns=['date', 'hour'])
+
+        # Format 'date_hour' to string
+        self.df['date_hour'] = self.df['date_hour'].dt.strftime('%Y-%m-%d %H:%M:%S')
+
+        # Determine transaction action
+        self.df['transaction_action'] = self.df['ID_order'].apply(lambda x: 'real' if isinstance(x, str) and x else 'non_real')
+
+        # Add ticker symbols
         self._add_ticker_symbol()
+
+        # Select relevant columns and derive additional fields
+        self.df = self.df[['date_hour', 'quantity', 'ticker_symbol', 'share_price', 'share_currency', 'transact_currency', 'fee', 'transaction_action']]
+        self.df['transaction_type'] = self.df['quantity'].apply(lambda x: 'buy' if x > 0 else 'sale')
+        self.df['n_shares'] = self.df['quantity'].abs()
+        self.df = self.df.drop(columns=['quantity'])
+
+
 
     def write_to_sqlite(self):
         # Store the DataFrame in the SQLite database table
@@ -239,59 +267,132 @@ class DataProcess:
     
     
     
-class DegiroCsvProcess:
-    def __init__(self, user_id:str, pf_name:str, degiro_csv_paths:Union[str, List[str]], mapper_file_path:str):
+class CsvProcessor:
+    def __init__(self, user_id:str, mapper_file_path:str):
         self.user_id = user_id
-        self.pf_name = pf_name
         self.sqlite_path = f'Invest_e_Gator\conf\sqlite\{user_id}.db'
-        
-        self.degiro_csv_paths = degiro_csv_paths if isinstance(degiro_csv_paths, List) else [degiro_csv_paths]
+
         self.mapper_file_path = mapper_file_path  
         
         self.all_transactions_df = pd.DataFrame()
+    
+    def _validate_csv_paths(self, csv_paths:List[str]):
+        # Validate all paths are csv
+        for path in csv_paths:
+            validate_load_csv(file_path=path)
+            
+    def _paths_to_list(self, paths:Union[str, List[str]]):
+        # If only one path is provided, convert it to a list
+        return paths if isinstance(paths, List) else [paths]
+            
+    def degiro_process_and_store(self, pf_name:str, degiro_csv_paths:Union[str, List[str]]):
+        # If only one path is provided, convert it to a list
+        degiro_csv_paths = self._paths_to_list(degiro_csv_paths)
+        # Validate all paths are csv
+        self._validate_csv_paths(degiro_csv_paths)
         
-    def process_and_clean(self):
-        self.run_csv_processing()
-        self.run_data_cleaning()
+        self._run_csv_processing(pf_name, degiro_csv_paths)
+        self._run_data_cleaning(pf_name)
         
-    def run_csv_processing(self):      
-        sqlite_table_name = '_'.join([self.pf_name, 'all_transactions'])   
-        CSVMerger(self.user_id, self.degiro_csv_paths, sqlite_table_name)
+    def _run_csv_processing(self, pf_name:str, degiro_csv_paths:Union[str, List[str]]):      
+        sqlite_table_name = '_'.join([pf_name, 'all_transactions'])   
+        CSVMerger(self.user_id, degiro_csv_paths, sqlite_table_name)
         self.all_transactions_df = SQLiteManagment.retrieve_dataframe_from_sqlite(self.user_id, sqlite_table_name)
         
-    def run_data_cleaning(self):
+    def _run_data_cleaning(self, pf_name:str):
         # Init DataProcess object
         DataProcess(
             self.user_id,
             self.all_transactions_df, 
             pd.read_csv(self.mapper_file_path),
-            '_'.join([self.pf_name, 'cleaned_transactions'])
+            '_'.join([pf_name, 'cleaned_transactions'])
         )
 
-    def get_cleaned_transactions(self):
+    def csv_process_and_clean(self, pf_name:str, classical_csv_paths:Union[str, List[str]]):
+        # If only one path is provided, convert it to a list
+        classical_csv_paths = self._paths_to_list(classical_csv_paths)
+        # Validate all paths are csv
+        self._validate_csv_paths(classical_csv_paths)
+        needed_columns = ['date_hour', 'transaction_type', 'ticker_symbol', 'n_shares', 'share_price', 'share_currency', 'transact_currency', 'fee', 'transaction_action']
+        
+        for path in classical_csv_paths:
+            df = pd.read_csv(path, parse_dates=['date_hour'])
+        
+            for column in needed_columns:
+                if column not in df.columns:
+                    raise ValueError(f"Column {column} not found in the dataframe.")
+            
+        # Store the DataFrame in the SQLite database table
+        SQLiteManagment.store_dataframe_in_sqlite(self.user_id, df, table_name=pf_name)
+        
+    def get_cleaned_transactions(self, pf_name:str):
         # Retrieve the portfolio from the sqlite database
-        clean_df = SQLiteManagment.retrieve_dataframe_from_sqlite(self.user_id, '_'.join([self.pf_name, 'cleaned_transactions']))
+        clean_df = SQLiteManagment.retrieve_dataframe_from_sqlite(self.user_id, '_'.join([pf_name, 'cleaned_transactions']))
         # Sort by datetime
-        clean_df['Datetime'] = pd.to_datetime(clean_df['Datetime'], format='%Y-%m-%d %H:%M:%S')
+        clean_df['date_hour'] = pd.to_datetime(clean_df['date_hour'], format='%Y-%m-%d %H:%M:%S')
 
-        return clean_df.sort_values(by='Datetime')
+        return clean_df.sort_values(by='date_hour')
+
+    
+    def merge_cleaned_transactions(self, pfs_names:List[str]):
+        fusion_df = pd.DataFrame()
+        
+        for pf_name in pfs_names:
+            # Get cleaned df
+            cleaned_df = SQLiteManagment.retrieve_dataframe_from_sqlite(self.user_id, '_'.join([pf_name, 'cleaned_transactions']))
+            # Concatenate and remove duplicates
+            fusion_df = pd.concat([fusion_df, cleaned_df], ignore_index=True).drop_duplicates()
+        
+        # Sort by Datetime
+        fusion_df['date_hour'] = pd.to_datetime(fusion_df['date_hour'], format='%Y-%m-%d %H:%M:%S')
+        fusion_df = fusion_df.sort_values(by='date_hour')
+
+        return fusion_df
+    
 
         
+        
+        
+        
+        
+        
+        
+        
+    ## LOAD CLASSICAL CSV NON DEGIRO FILE (NEED SOME PREDIFINED COLUMNS)
+    ## LOAD CLASSICAL CSV NON DEGIRO FILE (NEED SOME PREDIFINED COLUMNS)
+    ## LOAD CLASSICAL CSV NON DEGIRO FILE (NEED SOME PREDIFINED COLUMNS)
+    
+    ## FUSE PF CLEANED DF ACCORDING TO SOME SELECTED USER'S PF NAMES
+    ## FUSE PF CLEANED DF ACCORDING TO SOME SELECTED USER'S PF NAMES
+    ## FUSE PF CLEANED DF ACCORDING TO SOME SELECTED USER'S PF NAMES
+    ## FUSE PF CLEANED DF ACCORDING TO SOME SELECTED USER'S PF NAMES
+    
+    ## THEN IN THE PORTFOLIO CLASS JUST SELECT THE PF WE WANT TO ANALYSE
+    
+
+    
+    
+
 
 
 if __name__ == "__main__":
-
-    degiro_process = DegiroCsvProcess(
+    pf_name='Valola'
+    
+    degiro_csv_paths=[
+        r'C:\Users\V.ozeel\Documents\Perso\Coding\Python\Projects\Finances\Invest_e_Gator\Invest_e_Gator\data\degiro_transactions\Val\transactions\07-09-2024.csv',
+        r'C:\Users\V.ozeel\Documents\Perso\Coding\Python\Projects\Finances\Invest_e_Gator\Invest_e_Gator\data\degiro_transactions\Lola\transactions\07-09-2024.csv'
+    ]
+        
+    csv_process = CsvProcessor(
         user_id='Valola',
-        pf_name='Valola',
-        degiro_csv_paths=[
-            r'C:\Users\V.ozeel\Documents\Perso\Coding\Python\Projects\Finances\Invest_e_Gator\Invest_e_Gator\data\degiro_transactions\Val\transactions\07-09-2024.csv',
-            r'C:\Users\V.ozeel\Documents\Perso\Coding\Python\Projects\Finances\Invest_e_Gator\Invest_e_Gator\data\degiro_transactions\Lola\transactions\07-09-2024.csv'
-        ],
         mapper_file_path=r'C:\Users\V.ozeel\Documents\Perso\Coding\Python\Projects\Finances\Invest_e_Gator\Invest_e_Gator\data\degiro_transactions\mapper_file.csv'
         )
-    degiro_process.process_and_clean()
-    df = degiro_process.get_cleaned_transactions()
+    
+    csv_process.degiro_process_and_store(
+        pf_name=pf_name,
+        degiro_csv_paths=degiro_csv_paths)
+    
+    df = csv_process.get_cleaned_transactions(pf_name)
     print(df)
     
 

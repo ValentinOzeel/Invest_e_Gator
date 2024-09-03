@@ -8,7 +8,7 @@ class Transaction():
     def __init__(self, 
                  date_hour: Union[str, datetime], 
                  transaction_type: Literal['buy', 'sale'],
-                 ticker: str,
+                 ticker_symbol: str,
                  n_shares: float,
                  share_price: float,
                  share_currency: str,
@@ -19,7 +19,7 @@ class Transaction():
         
         self.date_hour = date_hour 
         self.transaction_type = transaction_type.lower()
-        self.ticker = ticker.lower()
+        self.ticker_symbol = ticker_symbol.lower()
         self.n_shares = n_shares 
         self.share_price = share_price 
         self.share_currency = share_currency.lower()
@@ -28,7 +28,7 @@ class Transaction():
         self.transaction_action = transaction_action
         
         validate_transaction(date_hour=self.date_hour, transaction_type=self.transaction_type,
-                             ticker=self.ticker, n_shares=self.n_shares, share_price=self.share_price, share_currency=self.share_currency,
+                             ticker_symbol=self.ticker_symbol, n_shares=self.n_shares, share_price=self.share_price, share_currency=self.share_currency,
                              transact_currency=self.transact_currency, fee=self.fee,
                              transaction_action=self.transaction_action)
         

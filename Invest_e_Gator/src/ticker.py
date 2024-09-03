@@ -8,8 +8,8 @@ from Invest_e_Gator.src.secondary_modules.pydantic_valids import validate_data_h
 from Invest_e_Gator.src.constants import yfinance_info_attributes
 
 class Ticker():
-    def __init__(self, ticker_name):
-        self.ticker_name = ticker_name 
+    def __init__(self, ticker_symbol):
+        self.ticker_symbol = ticker_symbol 
         self.session = session
         self._ticker = self.get_yfinance_ticker()
         # Create property methods to easily access yfinance.Ticker.info values
@@ -17,9 +17,9 @@ class Ticker():
         
     def get_yfinance_ticker(self):
         try:
-            return yf.Ticker(self.ticker_name, session=self.session)
+            return yf.Ticker(self.ticker_symbol, session=self.session)
         except Exception as e:
-            print(f"This ticker '{self.ticker_name}' either doesn't exist or isn't available via the yfinance API.\n{e}")
+            print(f"This ticker '{self.ticker_symbol}' either doesn't exist or isn't available via the yfinance API.\n{e}")
 
 
     ### Create property methods corresponding to elements yfinance.Ticker.info dict.

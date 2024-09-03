@@ -138,7 +138,7 @@ def validate_financials(**kwargs):
 class TransactionPydantic(BaseModel):
     date_hour: Union[str, datetime]
     transaction_type: Literal['buy', 'sale']
-    ticker: str
+    ticker_symbol: str
     n_shares: Union[float, int]
     share_price: Union[float, int]
     share_currency: str
