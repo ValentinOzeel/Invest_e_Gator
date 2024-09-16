@@ -12,15 +12,20 @@ This document outlines the steps to create an AI agent system that can browse sp
    - `sqlalchemy` for database operations
    - `llama-cpp-python` for running the local Llama 3.1 8b model
    - `apscheduler` for scheduling tasks
+3. Set up git version control
 
 ## 2. Design the database schema
 
-1. Create a SQLite database to store scraped news articles and derived metrics
-2. Design tables for:
-   - Stocks (ticker symbol, company name)
-   - News articles (title, content, publication date, source URL)
-   - Sentiment analysis (article ID, sentiment score, key metrics)
-   - Derived metrics (stock symbol, metric name, value, date)
+1. Use SQLAlchemy ORM to define the database schema:
+-  Create a models.py file with the following tables:
+
+    Stocks (id, ticker_symbol, company_name)
+    NewsArticles (id, title, content, publication_date, source_url, stock_id)
+    SentimentAnalysis (id, article_id, sentiment_score, key_metrics)
+    DerivedMetrics (id, stock_id, metric_name, value, date)
+
+-  Implement relationships between tables (e.g., one-to-many between Stocks and NewsArticles)
+2. Use Alembic for database migrations
 
 ## 3. Implement the AIToolkit class
 
@@ -35,31 +40,44 @@ Create an `AIToolkit` class that contains all the tools needed by the AI agents:
    - Retrieve existing articles
    - Update derived metrics
 3. NLP methods using locally hosted Llama 3.1 8b:
+   - Use llama-cpp-python to load the Llama 3.1 8b model 
+   - Implement custom prompts for financial news analysis
+   - Use batching for efficient processing of multiple articles
    - Summarize article content
    - Extract key information (sentiment, mentioned companies, financial metrics)
 4. Derivative metric calculations:
-   - Calculate sentiment over time
+   - Implement moving averages for sentiment trends
    - Analyze news frequency
-   - Generate word clouds
+   - Use TF-IDF for keyword extraction
 5. Visualization tools:
+   - Use Matplotlib for generating charts; Implement Plotly for interactive visualizations
    - Create sentiment trend charts
    - Plot news frequency graphs
-   - Generate word cloud images
+   - Generate word cloud images with WordCloud 
 
 ## 4. Develop the sub-agents
 
 Create specialized sub-agents for different tasks:
 
 1. `NewsScraperAgent`:
+   - Implement URL generation based on stock symbols
+   - Use asyncio for concurrent scraping of multiple sources
+   - Implement rate limiting and respect robots.txt
    - Responsible for scraping news from specified URLs
    - Uses AIToolkit for web scraping and database operations
 2. `NLPAgent`:
+   - Use threading for parallel processing of articles
+   - Use a queue system for managing NLP tasks
+   - Implement batching for efficient use of the Llama model
    - Processes scraped news using the local Llama 3.1 8b model
    - Uses AIToolkit for NLP methods and database operations
 3. `MetricsAgent`:
    - Calculates derivative metrics based on processed news data
+   - Implement real-time metric updates
    - Uses AIToolkit for metric calculations and database operations
 4. `ReportingAgent`:
+   - Use Jinja2 templates for report generation
+   - Implement asynchronous report generation
    - Generates reports and visualizations
    - Uses AIToolkit for visualization tools and database operations
 
@@ -67,16 +85,27 @@ Create specialized sub-agents for different tasks:
 
 Create a `MainOrchestrator` class that:
 
-1. Maintains a list of stock symbols to monitor
-2. Coordinates the activities of sub-agents
-3. Implements a scheduling system using `apscheduler`
-4. Provides a command-line interface for user interactions
+1. Create an orchestrator.py file with the MainOrchestrator class:
+   - Use the Observer pattern for coordinating sub-agents
+   - Implement a state machine for managing the overall workflow
+   - Use asyncio for managing concurrent tasks
+2. Implement scheduling using APScheduler:
+   - Use BackgroundScheduler for running tasks
+   - Implement custom job stores for persistence
+3. Develop a RESTful API using FastAPI:
+   - Implement endpoints for adding/removing stocks
+   - Create endpoints for triggering scraping runs
+   - Develop endpoints for retrieving reports and visualizations
 
 ## 6. Set up the Llama 3.1 8b model
 
 1. Download and set up the Llama 3.1 8b model locally
 2. Create a custom system prompt for financial news analysis
-3. Implement a method in AIToolkit to interact with the model
+3. Implement a method in AIToolkit to interact with the model:
+   - Use context management for efficient resource handling
+   - Implement temperature and top-p sampling for diverse outputs
+   - Use logging to track model interactions and performance
+
 
 ## 7. Implement the main workflow
 
@@ -90,6 +119,18 @@ In the `MainOrchestrator` class, implement the main workflow:
    - Use `MetricsAgent` to calculate derivative metrics
 3. Use `ReportingAgent` to generate reports and visualizations
 
+Use asyncio.gather for concurrent execution of sub-agent tasks
+Implement error handling and retries for each step
+Use a message queue (e.g., RabbitMQ) for task distribution
+
+Implement data validation at each step:
+   - Use Pydantic models for data validation
+   - Implement custom validators for financial data
+
+Develop a caching layer for intermediate results:
+   - Use Redis for caching frequently accessed data
+   - Implement TTL (Time To Live) for cached items
+
 ## 8. Develop the user interface
 
 Implement a command-line interface in the `MainOrchestrator` class for:
@@ -98,6 +139,10 @@ Implement a command-line interface in the `MainOrchestrator` class for:
 2. Manually triggering scraping runs
 3. Generating and displaying reports
 4. Visualizing trends and metrics
+
+OR
+
+Build an actual application using Dash or Gradio/Streamlit/Taipy
 
 ## 9. Ensure ethical and legal compliance
 
